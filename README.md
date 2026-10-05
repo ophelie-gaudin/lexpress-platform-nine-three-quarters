@@ -93,6 +93,74 @@ La réponse contient deux listes :
 
 `content` vaut `full` ou `preview`. `source` vaut `arc` ou `page-publique`. `state` vaut `created`, `extended` ou `unchanged`. Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés : contrôler les deux listes. Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.
 
+### Exemple : prolonger un lien et en créer un autre dans la même requête
+
+Scénario illustratif : l’appel est effectué le **5 octobre 2026 à 13 h UTC**, pour offrir deux articles pendant **15 jours à partir de cet appel**. Les tokens et les dates ci-dessous sont fictifs ; cet exemple ne décrit pas l’état actuel de la base.
+
+Avant l’appel :
+
+| Article | État en base |
+| --- | --- |
+| « La DGSE investit dans l’IA… » | Lien existant avec le token `11111111111111111111111111111111`, valable jusqu’au 10 octobre 2026 à 13 h UTC |
+| « En 2027, faut-il mentir pour survivre… » | Aucun lien existant |
+
+Renseigner `GIFT_SERVICE_TOKEN` dans l’environnement de l’appelant serveur avec le secret fourni par Ophélie, puis envoyer :
+
+```sh
+curl --request POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  --header "x-gift-service-token: ${GIFT_SERVICE_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "urls": [
+      "https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY",
+      "https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y"
+    ],
+    "expires_in_days": 15,
+    "channel": "whatsapp",
+    "campaign": "prospects_chauds"
+  }'
+```
+
+Si Arc fournit le contenu complet des deux articles et que la mise en cache et la création réussissent, la réponse **HTTP 200** a cette forme :
+
+```json
+{
+  "links": [
+    {
+      "url": "https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY",
+      "arc_id": "LQBW5JK75BDOBJHRA76NRFPJFY",
+      "token": "11111111111111111111111111111111",
+      "link": "https://articles.lexpress.fr/a/11111111111111111111111111111111",
+      "expires_at": "2026-10-20T13:00:00+00:00",
+      "content": "full",
+      "source": "arc",
+      "state": "extended"
+    },
+    {
+      "url": "https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y",
+      "arc_id": "RQOLMEM5NZE3BNTWPJEEGC5B5Y",
+      "token": "22222222222222222222222222222222",
+      "link": "https://articles.lexpress.fr/a/22222222222222222222222222222222",
+      "expires_at": "2026-10-20T13:00:00+00:00",
+      "content": "full",
+      "source": "arc",
+      "state": "created"
+    }
+  ],
+  "rejected": []
+}
+```
+
+Comment lire cette réponse :
+
+- **Premier article — `extended`** : le token et l’URL restent identiques. L’expiration passe du 10 au 20 octobre ; les personnes ayant déjà reçu ce lien bénéficient aussi de la prolongation. Les 15 jours sont calculés depuis l’appel, pas ajoutés à l’ancienne date de fin.
+- **Second article — `created`** : le service crée un nouveau token et son lien, valable jusqu’au 20 octobre.
+- **`content: "full"`** : les deux liens donnent accès au corps de l’article. Si Arc ne fournit pas le corps et que le repli public fonctionne, vérifier `content: "preview"` avant de promettre un accès complet.
+- **`rejected: []`** : aucun article n’a été refusé. Toujours vérifier cette liste, même avec HTTP 200.
+
+Diffuser la valeur de **`link`** pour chaque article, et non l’URL originale `url`, qui reste soumise au mur d’abonnement du site. Si le lien existant était déjà valable au-delà du 20 octobre, il conserverait sa date plus lointaine et serait rendu avec `state: "unchanged"`.
+
 | HTTP | Sens |
 | --- | --- |
 | 401 | Secret absent, faux ou non configuré |
