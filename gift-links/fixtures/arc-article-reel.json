@@ -1,0 +1,157 @@
+{
+ "_id": "4S7V6GJJLZCNDESZNFSRXUHFKY",
+ "canonical_website": "lexpress",
+ "content_elements": [
+  {
+   "content": "A 46 ans, Maxime Carmignac copilote avec son père cette référence de la finance européenne qui gère près de 45 milliards d’euros d'actifs. Elle interviendra en qualité de grand témoin <a href=\"https://www.lexpress.fr/evenements/colloque-entreprises-familiales/\" target=\"_self\" rel=\"\" title=\"https://www.lexpress.fr/evenements/colloque-entreprises-familiales/\">lors du colloque organisé par L'Express</a> ce jeudi 24 septembre à Paris, au théâtre Marigny : \"Entreprises familiales : le maillon clé de notre souveraineté\".",
+   "type": "text"
+  },
+  {
+   "content": "<b>L'Express : Vous dites être entrée deux fois chez Carmignac, la première par devoir, la seconde par choix.</b>",
+   "type": "text"
+  },
+  {
+   "items": [
+    {
+     "_id": "26ZWVOTBBNEKDMPBOBZVROR3RM",
+     "additional_properties": {
+      "nofollow": false,
+      "openInNewTab": false,
+      "sponsored": false
+     },
+     "content": "Pourquoi les dynasties patronales sont le pilier de notre souveraineté",
+     "description": {
+      "_id": "E3WDP5VGUBGMXBH5HST5JWOS6Y",
+      "content": "",
+      "type": "text"
+     },
+     "type": "interstitial_link",
+     "url": "https://www.lexpress.fr/economie/entreprises/pourquoi-les-dynasties-patronales-sont-le-pilier-de-notre-souverainete-MVEREBWCCVBA3NSVNEKB7OY7UA/"
+    }
+   ],
+   "subtype": "read-more",
+   "title": "",
+   "type": "link_list"
+  }
+ ],
+ "content_restrictions": {
+  "content_code": "premium"
+ },
+ "created_date": "2026-09-17T09:37:29.412Z",
+ "credits": {
+  "by": [
+   {
+    "_id": "bouillin-arnaud",
+    "name": "Arnaud Bouillin",
+    "type": "author"
+   }
+  ]
+ },
+ "description": {
+  "basic": ""
+ },
+ "display_date": "2026-09-24T09:00:00Z",
+ "first_publish_date": "2026-09-24T09:00:00Z",
+ "headlines": {
+  "basic": "Maxime Carmignac : \"La première fois que je suis entrée dans l'entreprise de mon père, on m'a vue comme une espionne\"",
+  "meta_title": "",
+  "mobile": "",
+  "native": "",
+  "print": "",
+  "table": "",
+  "tablet": "",
+  "web": ""
+ },
+ "language": "",
+ "last_updated_date": "2026-09-24T09:00:34.121Z",
+ "promo_items": {
+  "basic": {
+   "_id": "EW33H5DOJNBK7E33W25RZWFB5M",
+   "alt_text": "Maxime Carmignac",
+   "caption": "\"On joue notre peau dans nos choix d'investissement, au même titre que nos clients\", insiste la directrice générale de Carmignac.",
+   "created_date": "2026-09-17T09:41:26Z",
+   "credits": {
+    "affiliation": [
+     {
+      "name": "DR",
+      "type": "author"
+     }
+    ]
+   },
+   "height": 4724,
+   "image_type": "photograph",
+   "last_updated_date": "2026-09-17T09:41:26Z",
+   "subtitle": "\"On joue notre peau dans nos choix d'investissement, au même titre que nos clients\", insiste la directrice générale de Carmignac.",
+   "type": "image",
+   "url": "https://cloudfront-eu-central-1.images.arcpublishing.com/lexpress/EW33H5DOJNBK7E33W25RZWFB5M.jpeg",
+   "width": 3149,
+   "syndication": {
+    "search": true
+   },
+   "country_name": "France",
+   "creditIPTC": "DR",
+   "focal_point": {
+    "x": 1340,
+    "y": 846
+   }
+  },
+  "etx": {
+   "embed": {
+    "config": {
+     "duration": "268",
+     "id": "-uW1Wd3moX",
+     "mp3": "https://static.lexpress.fr/etx/prod/-uW1Wd3moX.mp3"
+    },
+    "id": "1790240430_-uW1Wd3moX",
+    "url": "https://static.lexpress.fr/etx/prod/-uW1Wd3moX.mp3"
+   },
+   "subtype": "etx",
+   "type": "custom_embed"
+  }
+ },
+ "publish_date": "2026-09-24T09:00:00Z",
+ "subheadlines": {
+  "basic": "La directrice générale de Carmignac incarne la relève dans cette société de gestion fondée par son père Edouard en 1989."
+ },
+ "subtype": "interview",
+ "taxonomy": {
+  "primary_section": {
+   "_id": "/economie/entreprises",
+   "name": "Entreprises",
+   "type": "section"
+  },
+  "primary_site": {
+   "_id": "/economie/entreprises",
+   "name": "Entreprises",
+   "type": "site"
+  },
+  "sections": [
+   {
+    "_id": "/economie/entreprises",
+    "name": "Entreprises",
+    "type": "section"
+   },
+   {
+    "_id": "/economie",
+    "name": "Economie",
+    "type": "section"
+   }
+  ],
+  "sites": [
+   {
+    "_id": "/economie/entreprises",
+    "name": "Entreprises",
+    "type": "site"
+   },
+   {
+    "_id": "/economie",
+    "name": "Economie",
+    "type": "site"
+   }
+  ]
+ },
+ "type": "story",
+ "canonical_url": "/economie/entreprises/maxime-carmignac-la-premiere-fois-que-je-suis-entree-dans-lentreprise-de-mon-pere-on-ma-vue-comme-4S7V6GJJLZCNDESZNFSRXUHFKY/",
+ "website": "lexpress",
+ "website_url": "/economie/entreprises/maxime-carmignac-la-premiere-fois-que-je-suis-entree-dans-lentreprise-de-mon-pere-on-ma-vue-comme-4S7V6GJJLZCNDESZNFSRXUHFKY/"
+}

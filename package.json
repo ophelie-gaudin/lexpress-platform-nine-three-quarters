@@ -1,0 +1,17 @@
+{
+  "name": "lexpress-gift-links",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Service interne L’Express de liens d’articles offerts",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build-gift-links-function.mjs",
+    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
+}
