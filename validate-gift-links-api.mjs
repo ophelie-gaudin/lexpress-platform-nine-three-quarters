@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { arcIdDepuisUrl, trierUrls } from './gift-links/functions/_shared/arc-id.mjs';
 import { apercuDepuisHtml } from './gift-links/functions/_shared/apercu.mjs';
-import { chargerArticle, depuisArc } from './gift-links/functions/_shared/arc.mjs';
+import { chargerArticle, depuisArc, rendreElement, sansSubstance } from './gift-links/functions/_shared/arc.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 
@@ -190,8 +190,99 @@ const PAGE = `<html><head>
     'C’EST LA PROPRIÉTÉ QUI COMPTE : les trois articles sont chargés EN PARALLÈLE — en série, la requête dépasse le temps imparti (constaté le 1er oct. : une URL passait, trois échouaient)');
   check(/req\.method === 'OPTIONS'/.test(b) && /Access-Control-Allow-Headers/.test(b),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : la pré-vérification OPTIONS reçoit une réponse — sans elle, un appelant navigateur est bloqué AVANT le code, avec un « Failed to fetch » qui ne dit rien');
-  check(/x-gift-service-token/.test(b) && /attendu === ''/.test(b),
-    'C’EST LA PROPRIÉTÉ QUI COMPTE : sans secret configuré, le service REFUSE tout — fabriquer des liens vers des articles premium est la porte la plus sensible');
+  check(/x-gift-service-token/.test(b) && /presente === ''/.test(b) && /!client\?\.ok/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : sans jeton reconnu en base, le service REFUSE tout — fabriquer des liens vers des articles premium est la porte la plus sensible');
+}
+
+
+// ── CE QU'ON GARDE DU CORPS, ET CE QU'ON ÉCARTE (7 oct. 2026).
+//
+// Le corps ne retenait que les paragraphes : un article long arrivait sans une seule respiration, et ses
+// citations disparaissaient. Ces cas fixent la liste de ce qu'on garde — et surtout de ce qu'on écarte
+// DÉLIBÉRÉMENT, pour que personne ne « répare » plus tard en rouvrant la porte aux « à lire aussi ».
+{
+  const q = rendreElement({ type: 'quote', citation: { type: 'text', content: 'Zack' },
+    content_elements: [{ type: 'text', content: 'Votre classe politique ne réalise pas' }] });
+  check(/^<blockquote>Votre classe politique ne réalise pas<cite>Zack<\/cite><\/blockquote>$/.test(q),
+    'une citation devient un blockquote, signature comprise');
+  check(rendreElement({ type: 'quote', content_elements: [] }) === '',
+    'une citation vide ne laisse pas une coquille dans la page');
+
+  const img = rendreElement({ type: 'image', url: 'https://cdn/x.jpg', caption: 'Une <b>légende</b>' });
+  check(/<figure><img src="https:\/\/cdn\/x\.jpg" alt="Une légende" loading="lazy"><figcaption>Une <b>légende<\/b><\/figcaption><\/figure>/.test(img),
+    'une image devient une figure légendée, et l’attribut alt est débarrassé de ses balises');
+  check(rendreElement({ type: 'image', url: 'javascript:alert(1)' }) === '',
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une URL qui n’est pas https est écartée — une page publique ne doit pas porter un schéma d’URL exécutable');
+  check(rendreElement({ type: 'image' }) === '', 'et une image sans URL tombe plutôt que de produire une image brisée');
+  check(/alt="Illustration de l’article"|alt="Illustration de l'article"/.test(
+    rendreElement({ type: 'image', url: 'https://cdn/y.jpg' })),
+    'sans légende, l’attribut alt reste renseigné : la page doit rester lisible sans les images');
+
+  check(rendreElement({ type: 'link_list', items: [{}] }) === '',
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : les « à lire aussi » sont écartés — ils mènent au paywall, et promettre une lecture libre pour buter le lecteur trois paragraphes plus loin serait pire que de ne rien proposer');
+  check(rendreElement({ type: 'interstitial_link' }) === '', 'idem pour les liens intercalaires');
+  for (const t of ['custom_embed', 'oembed_response', 'raw_html', 'table', 'gallery', 'inconnu_de_demain'])
+    check(rendreElement({ type: t, content: '<script>x</script>' }) === '',
+      `un type ${t} tombe : un format dont on ne maîtrise pas le rendu ne traverse pas`);
+
+  const doc = { headlines: { basic: 'T' }, content_elements: [
+    { type: 'text', content: '<p>Un</p>' },
+    { type: 'quote', content_elements: [{ type: 'text', content: 'Dit' }] },
+    { type: 'link_list' },
+    { type: 'image', url: 'https://cdn/i.jpg' }] };
+  const corps = depuisArc(doc, URL_OK).body;
+  check(corps.includes('<blockquote>Dit</blockquote>') && corps.includes('<figure>') && !corps.includes('link_list'),
+    'le corps assemblé garde texte, citation et image, dans l’ordre du document');
+}
+
+
+// ── 006 : l'authentification par service, côté fonction Edge.
+{
+  const b = readFileSync('gift-links/functions/create-gift-links/index.bundle.ts', 'utf8');
+  check(/crypto\.subtle\.digest\('SHA-256'/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le jeton est haché DANS la fonction — il n’arrive jamais en clair à la base, pas plus qu’un mot de passe');
+  check(/verify_api_client/.test(b) && /p_token_sha256: empreinte/.test(b),
+    'et c’est bien l’empreinte qui part à la vérification');
+  check(!/p_token_sha256: presente|p_token: presente/.test(b), 'jamais le jeton lui-même');
+  check((b.match(/error: 'non autorisé' \}, 401\)/g) || []).length >= 2,
+    'le refus est un 401 NU : la fonction ne dit pas si le jeton est inconnu ou révoqué — le distinguer renseignerait qui cherche à deviner');
+  check(/count_client_links/.test(b) && b.indexOf('count_client_links') > b.indexOf('const liens'),
+    'les liens sont comptés À LA FIN : un appel qui échoue en chemin ne charge pas le compte d’un service');
+  // 7 oct. au soir : le repli a vécu le temps de basculer le job nocturne n8n sur son propre jeton.
+  // Preuve faite — 21 liens attribués à `n8n-agent-whatsapp` — donc le secret partagé disparaît.
+  // On vise la LECTURE de la variable, pas le mot : le commentaire qui explique le retrait a sa place
+  // dans le fichier, et un test qui interdirait d'en parler effacerait la mémoire de la décision.
+  check(!/env\(['"]GIFT_SERVICE_TOKEN['"]\)/.test(b) && !/Deno\.env\.get\(['"]GIFT_SERVICE_TOKEN['"]\)/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : plus aucun secret partagé n’ouvre la porte — un tel secret ne nomme personne, et le révoquer les couperait tous');
+  check(!/if\s*\(\s*clientId\s*\)/.test(b),
+    'et plus de chemin où le service reste anonyme : sans client reconnu, la fonction rend 401 avant tout travail');
+
+  // 008 : CE QUE L'APPELANT LIT EST EN ANGLAIS, jusqu'au nom de service rendu quand aucun jeton nommé
+  // n'a été présenté. `client: "héritage"` aurait été le dernier mot français de la réponse publique.
+  check(/client: clientName/.test(b) && !/'héritage'/.test(b) && !/= 'legacy'/.test(b),
+    'la réponse nomme le service appelant, et il n’y a plus d’appelant anonyme à nommer « legacy »');
+  check(/client\.name/.test(b) && !/client\.nom/.test(b),
+    'et la fonction lit bien la colonne `name` rendue par verify_api_client');
+}
+
+
+// ── UN CORPS QUI NE DIT RIEN N'EST PAS UN CORPS (7 oct. 2026).
+//
+// Relevé sur une vraie page de dossier : Arc rendait « <br/> ». Cinq caractères, donc non vide, donc
+// annoncé « article complet » — et la page offerte n'affichait que son chapeau. Mesurer la longueur ne
+// suffit pas, il faut mesurer la substance.
+{
+  for (const vide of ['<br/>', '   ', '<p>&nbsp;</p>', '<p></p><br>', '<div><span></span></div>'])
+    check(sansSubstance(vide), `« ${vide} » ne fait pas un corps`);
+  check(!sansSubstance('<p>Un vrai paragraphe.</p>'), 'du texte, si');
+  check(!sansSubstance('<figure><img src="https://x/i.jpg"></figure>'),
+    'une image non plus ne doit pas être prise pour du vide : un article qui ne serait qu’une photo légendée reste un article');
+
+  const dossier = { headlines: { basic: 'Dossier' }, content_elements: [{ type: 'text', content: '<br/>' }] };
+  check(depuisArc(dossier, URL_OK).body === null,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un corps sans substance vaut null — la page sert alors son aperçu honnête, au lieu de promettre une lecture offerte et de ne rien montrer');
+  const vrai = { headlines: { basic: 'Vrai' }, content_elements: [{ type: 'text', content: '<p>Du contenu.</p>' }] };
+  check(depuisArc(vrai, URL_OK).body === '<p>Du contenu.</p>', 'et un vrai corps passe intact');
 }
 
 console.log(`liens offerts (lot 2, contenu) : ${n} vérifications passées.`);

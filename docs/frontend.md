@@ -4,9 +4,9 @@ La page publiée se trouve sur `https://articles.lexpress.fr/a/:token`. Ses sour
 
 ## Lecture
 
-Appeler uniquement `get_gift_article` avec la clé publique du projet Supabase et les paramètres `p_token`, `p_utm_source`, `p_utm_campaign`, `p_referrer`. Les trois derniers peuvent être nuls. La réponse SQL contient une ligne ; les échecs de transport ou du service restent possibles et doivent être traités séparément.
+Appeler uniquement `get_gift_article` avec la clé publique du projet Supabase et les paramètres `p_token`, `p_utm_source`, `p_utm_campaign`, `p_referrer`, `p_send_id`, `p_campaign_group`. Tous sauf `p_token` peuvent être nuls. `p_send_id` reçoit le `?s=` de l'URL : il rattache une lecture à un envoi précis, là où le token est commun à tous les destinataires. Une valeur hors forme devient `NULL` sans faire tomber la page — une query string bricolée ne doit jamais rendre un article illisible. La réponse SQL contient une ligne ; les échecs de transport ou du service restent possibles et doivent être traités séparément.
 
-Le frontend ne doit jamais recevoir `GIFT_SERVICE_TOKEN`, `ARC_TOKEN` ou une clé `service_role`, ni appeler l’API de création avec un secret serveur.
+Le frontend ne doit jamais recevoir de jeton de service, `ARC_TOKEN` ou une clé `service_role`, ni appeler l’API de création. Il ne connaît que la clé publique `anon` et `get_gift_article`.
 
 ## États
 

@@ -4,6 +4,7 @@
 // corps, le token ne protège plus rien — il suffirait d'énumérer la table.
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
@@ -13,6 +14,10 @@ await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_
 await db.exec(readFileSync('gift-links/supabase/001-schema.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/002-author.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/003-un-lien-par-article.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/005-identifiant-envoi.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/006-clients-api.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/007-attribution-liens.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
 
 const q = async (sql, params) => (await db.query(sql, params)).rows;
 
@@ -107,10 +112,11 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
       `C’EST LA PROPRIÉTÉ QUI COMPTE : anon ne peut PAS lire ${t} — sinon le token ne protège plus rien, il suffirait d’énumérer la table`);
 
   const exec = async (role, sig) => (await q('SELECT has_function_privilege($1, $2, $3) AS ok', [role, sig, 'EXECUTE']))[0].ok;
-  check(await exec('anon', 'get_gift_article(text,text,text,text)'), 'anon peut appeler get_gift_article : c’est la page publique');
-  check(!(await exec('anon', 'create_gift_links(text[],text,text,timestamptz)')),
+  check(await exec('anon', 'get_gift_article(text,text,text,text,text,text)'), 'anon peut appeler get_gift_article : c’est la page publique — signature de la migration 005, dont le DROP avait emporté les droits');
+  // Signature de la migration 007 : un paramètre de plus, le service qui demande.
+  check(!(await exec('anon', 'create_gift_links(text[],text,text,timestamptz,uuid)')),
     'mais PAS create_gift_links : une page publique ne fabrique pas de liens');
-  check(!(await exec('authenticated', 'create_gift_links(text[],text,text,timestamptz)')),
+  check(!(await exec('authenticated', 'create_gift_links(text[],text,text,timestamptz,uuid)')),
     'ni authenticated : seul le service, par service_role');
 
   const def = (await q("SELECT prosecdef, proconfig FROM pg_proc WHERE proname = 'get_gift_article'"))[0];
@@ -195,6 +201,205 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
     await q("INSERT INTO gift_links (token, arc_id, expires_at) VALUES ('ffffffffffffffffffffffffffffffff', 'STABLE00000000000000000001', now() + interval '1 day')");
   } catch { doublonRefuse = true; }
   check(doublonRefuse, 'deux liens pour un même article sont refusés par la contrainte, pas seulement par la fonction');
+}
+
+// ── 005 : l'identifiant d'ENVOI rend une lecture attribuable.
+//
+// Le token est partagé par article (003) : lui seul ne dit jamais QUI a lu. Ces cas-là éprouvent que
+// l'ouverture porte désormais l'envoi, et surtout qu'une query string bricolée ne casse rien.
+{
+  // Un article NEUF : le token est stable par article (003), donc réutiliser un token déjà éprouvé plus
+  // haut le trouverait coupé ou expiré.
+  await q(`INSERT INTO articles (arc_id, canonical_url, title, body, author)
+           VALUES ('ENVOI00000000000000000001', 'https://x/envoi', 'Attribué', 'Un corps.', 'Corentin Pennarguear')`);
+  const lien = (await q(`SELECT token FROM create_gift_links(ARRAY['ENVOI00000000000000000001'], 'whatsapp', 'prospects')`))[0].token;
+  const envoi = 'a'.repeat(32);
+
+  // L'appel historique, qui ne nomme que quatre arguments, doit continuer de fonctionner : c'est ce qui
+  // permet d'appliquer la migration AVANT la mise à jour de la page.
+  const ancien = await q(`SELECT status FROM get_gift_article($1, 'Whatsapp', 'prospects', NULL)`, [lien]);
+  check(ancien[0].status === 'ok', "005 : l'appel à quatre arguments marche encore (déploiement sans fenêtre de casse)");
+
+  await q(`SELECT 1 FROM get_gift_article($1, 'Whatsapp', 'prospects', NULL, $2, 'prospects_chauds')`, [lien, envoi]);
+  const vu = await q(`SELECT send_id, campaign_group, utm_source FROM gift_link_opens WHERE send_id = $1`, [envoi]);
+  check(vu.length === 1, "005 : l'ouverture est attribuée à l'envoi");
+  check(vu[0].campaign_group === 'prospects_chauds', '005 : le segment est conservé');
+  check(vu[0].utm_source === 'Whatsapp', '005 : at_medium est conservé dans utm_source');
+
+  // UNE URL BRICOLÉE NE DOIT PAS FAIRE TOMBER LA PAGE. Pas de contrainte CHECK : on range NULL.
+  const sale = await q(`SELECT status FROM get_gift_article($1, NULL, NULL, NULL, 'pas-un-identifiant', 'Segment Inconnu !')`, [lien]);
+  check(sale[0].status === 'ok', "005 : une query string bricolée sert quand même l'article");
+  const range = await q(`SELECT send_id, campaign_group FROM gift_link_opens ORDER BY id DESC LIMIT 1`);
+  check(range[0].send_id === null && range[0].campaign_group === null, '005 : une valeur douteuse est rangée à NULL, jamais rejetée');
+
+  // Un lien expiré ne compte toujours pas, identifiant d'envoi ou non.
+  const avant = (await q(`SELECT count(*)::int AS n FROM gift_link_opens`))[0].n;
+  await q(`UPDATE gift_links SET expires_at = now() - interval '1 day' WHERE token = $1`, [lien]);
+  const expire = await q(`SELECT status FROM get_gift_article($1, NULL, NULL, NULL, $2, NULL)`, [lien, 'b'.repeat(32)]);
+  check(expire[0].status === 'expired', '005 : un lien expiré reste expiré');
+  const apres = (await q(`SELECT count(*)::int AS n FROM gift_link_opens`))[0].n;
+  check(apres === avant, "005 : un lien expiré n'est toujours pas compté comme une lecture");
+  await q(`UPDATE gift_links SET expires_at = now() + interval '30 days' WHERE token = $1`, [lien]);
+}
+
+
+// ── 006 : un jeton par service appelant.
+//
+// CE QUE CES CAS DÉFENDENT. Le jeton en clair ne doit jamais arriver en base — la fonction Edge n'envoie
+// que son empreinte. Et révoquer un service ne doit couper que lui.
+{
+  const sha = (t) => createHash('sha256').update(t).digest('hex');
+  const verifier = async (empreinte) => (await q('SELECT * FROM verify_api_client($1)', [empreinte]))[0];
+
+  const idA = (await q('SELECT create_api_client($1,$2,$3) AS id', ['service-a', sha('jeton-a'), 'premier service']))[0].id;
+  await q('SELECT create_api_client($1,$2,$3)', ['service-b', sha('jeton-b'), null]);
+
+  check(!!idA, 'un client se crée et porte un identifiant');
+  const enBase = await q('SELECT name, token_sha256 FROM api_clients ORDER BY name');
+  check(enBase.every((c) => /^[0-9a-f]{64}$/.test(c.token_sha256)),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la table ne porte que des empreintes — lire api_clients ne donne aucun jeton utilisable');
+  check(!enBase.some((c) => c.token_sha256 === 'jeton-a' || c.token_sha256 === 'jeton-b'),
+    'et surtout pas le jeton en clair');
+
+  const a = await verifier(sha('jeton-a'));
+  check(a.ok === true && a.name === 'service-a', 'un jeton valide identifie son service');
+  check((await verifier(sha('inconnu'))).ok === false, 'un jeton inconnu est refusé');
+  check((await verifier('pas-une-empreinte')).ok === false, 'une empreinte mal formée est refusée sans interroger la table');
+
+  // RÉVOQUER N'EN COUPE QU'UN.
+  check((await q('SELECT revoke_api_client($1) AS fait', ['service-a']))[0].fait === true, 'la révocation aboutit');
+  check((await verifier(sha('jeton-a'))).ok === false, 'le service révoqué est refusé');
+  check((await verifier(sha('jeton-b'))).ok === true,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : révoquer un service ne coupe que lui — c’est tout l’intérêt d’un jeton par appelant');
+  check((await q('SELECT revoke_api_client($1) AS fait', ['service-a']))[0].fait === false,
+    'révoquer deux fois ne ment pas : la seconde rend false');
+
+  const revoque = (await q(`SELECT active, revoked_at FROM api_clients WHERE name = 'service-a'`))[0];
+  check(revoque.active === false && revoque.revoked_at !== null,
+    'la ligne RESTE après révocation : on garde la trace de ce que ce service a créé');
+
+  // LE COMPTAGE, qui prépare un plafond sans l'imposer aujourd'hui.
+  const avant = (await q(`SELECT calls FROM api_clients WHERE name = 'service-b'`))[0].calls;
+  await verifier(sha('jeton-b'));
+  const apres = (await q(`SELECT calls, last_used_at FROM api_clients WHERE name = 'service-b'`))[0];
+  check(apres.calls === avant + 1 && apres.last_used_at !== null, 'chaque appel est compté et daté');
+
+  const idB = (await q(`SELECT id FROM api_clients WHERE name = 'service-b'`))[0].id;
+  await q('SELECT count_client_links($1,$2)', [idB, 3]);
+  await q('SELECT count_client_links($1,$2)', [idB, -5]);
+  check((await q(`SELECT links_created FROM api_clients WHERE name = 'service-b'`))[0].links_created === 3,
+    'les liens sont comptés, et un nombre négatif n’enlève rien');
+
+  await assert.rejects(() => db.query('SELECT create_api_client($1,$2,NULL)', ['service-c', 'TROP-COURT']),
+    'une empreinte hors forme est refusée par la contrainte'); n++;
+  await assert.rejects(() => db.query('SELECT create_api_client($1,$2,NULL)', ['service-b', sha('autre')]),
+    'deux services ne peuvent pas porter le même nom'); n++;
+}
+
+
+// ── 007 : qui a créé ce lien, qui l'a prolongé.
+{
+  const sha = (t) => createHash('sha256').update(t).digest('hex');
+  const idX = (await q('SELECT create_api_client($1,$2,NULL) AS id', ['service-x', sha('x')]))[0].id;
+  const idY = (await q('SELECT create_api_client($1,$2,NULL) AS id', ['service-y', sha('y')]))[0].id;
+
+  await q(`INSERT INTO articles (arc_id, canonical_url, title, body)
+           VALUES ('ATTRIB0000000000000000001','https://x/a','Attribué','Un corps.')`);
+  const jours = (n) => new Date(Date.now() + n * 86400000).toISOString();
+
+  // X crée.
+  const c = await q(`SELECT * FROM create_gift_links(ARRAY['ATTRIB0000000000000000001'],'wa','prospects',$1::timestamptz,$2::uuid)`, [jours(10), idX]);
+  check(c[0].state === 'created', 'X crée le lien');
+  let l = (await q(`SELECT created_by, updated_by, updated_at FROM gift_links WHERE arc_id='ATTRIB0000000000000000001'`))[0];
+  check(l.created_by === idX && l.updated_by === idX && l.updated_at !== null, 'le créateur est inscrit, et il est aussi le dernier intervenant');
+
+  // Y prolonge : le créateur NE CHANGE PAS, le dernier intervenant si.
+  const e = await q(`SELECT * FROM create_gift_links(ARRAY['ATTRIB0000000000000000001'],NULL,NULL,$1::timestamptz,$2::uuid)`, [jours(40), idY]);
+  check(e[0].state === 'extended', 'Y prolonge');
+  l = (await q(`SELECT created_by, updated_by FROM gift_links WHERE arc_id='ATTRIB0000000000000000001'`))[0];
+  check(l.created_by === idX, 'C’EST LA PROPRIÉTÉ QUI COMPTE : le créateur reste le créateur, même quand un autre prolonge');
+  check(l.updated_by === idY, 'et le dernier intervenant devient celui qui a repoussé la date');
+
+  // X redemande une durée plus courte : rien ne change, donc personne n'a « modifié ».
+  const u = await q(`SELECT * FROM create_gift_links(ARRAY['ATTRIB0000000000000000001'],NULL,NULL,$1::timestamptz,$2::uuid)`, [jours(5), idX]);
+  check(u[0].state === 'unchanged', 'une durée plus courte ne raccourcit rien');
+  l = (await q(`SELECT updated_by FROM gift_links WHERE arc_id='ATTRIB0000000000000000001'`))[0];
+  check(l.updated_by === idY,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : demander sans rien changer ne fait pas de vous le dernier intervenant — sinon la colonne dirait « dernier à avoir demandé », pas « dernier à avoir modifié »');
+
+  // Sans service nommé (appelant d'héritage), l'attribution reste vide plutôt que devinée.
+  await q(`INSERT INTO articles (arc_id, canonical_url, title, body) VALUES ('HERITAGE00000000000000001','https://x/b','H','C.')`);
+  await q(`SELECT create_gift_links(ARRAY['HERITAGE00000000000000001'],NULL,NULL,$1::timestamptz,NULL)`, [jours(10)]);
+  check((await q(`SELECT created_by FROM gift_links WHERE arc_id='HERITAGE00000000000000001'`))[0].created_by === null,
+    'sans service nommé, l’attribution reste NULL : une absence honnête, pas une attribution devinée');
+
+  const vue = await q(`SELECT created_by, updated_by FROM gift_links_by_client WHERE arc_id='ATTRIB0000000000000000001'`);
+  check(vue[0].created_by === 'service-x' && vue[0].updated_by === 'service-y',
+    'la vue gift_links_by_client rend les NOMS, sans jointure à réécrire');
+
+  check((await q("SELECT count(*)::int c FROM pg_proc WHERE proname='create_gift_links'"))[0].c === 1,
+    'une seule fonction create_gift_links : le DROP a bien précédé le CREATE');
+  check((await q("SELECT has_function_privilege('service_role','public.create_gift_links(text[],text,text,timestamptz,uuid)','EXECUTE') AS ok"))[0].ok,
+    'et le rôle de service a retrouvé son droit — un DROP les emporte');
+}
+
+
+// ── 008 : le schéma entier parle anglais.
+//
+// POURQUOI UN TEST ET PAS UNE RELECTURE. Les migrations 001 à 005 étaient en anglais, 006 et 007 ont
+// glissé vers le français sans que personne le remarque avant la mise en production. Un service
+// extérieur lit ce schéma : il ne doit pas avoir à deviner deux langues. Ce cas le vérifie
+// mécaniquement, pour les colonnes À VENIR autant que pour celles d'aujourd'hui.
+{
+  // Mots français rencontrés dans ce dépôt. Aucun n'est un morceau de mot anglais : le découpage se fait
+  // sur les tirets bas, donc `created_at` ne déclenche pas `cree`.
+  // Chaque entrée est un mot français SANS homographe anglais : `revocation` et `utilisation` sont
+  // aussi des mots anglais et n'ont donc rien à faire ici — ils donneraient de fausses alertes.
+  const francais = new Set([
+    'nom', 'noms', 'actif', 'cree', 'creee', 'maj', 'lien', 'liens', 'appel', 'appels',
+    'revoque', 'derniere', 'dernier', 'titre', 'jeton', 'jetons', 'envoi', 'envois', 'etat',
+    'auteur', 'chapeau', 'rubrique', 'ouverture', 'ouvertures', 'motif',
+  ]);
+  const mots = (id) => id.split('_').filter(Boolean);
+
+  const objets = await q(`
+    SELECT 'colonne ' || table_name || '.' || column_name AS ou, column_name AS id
+      FROM information_schema.columns WHERE table_schema = 'public'
+    UNION ALL
+    SELECT 'table ' || table_name, table_name FROM information_schema.tables WHERE table_schema = 'public'
+    UNION ALL
+    SELECT 'fonction ' || p.proname, p.proname FROM pg_proc p
+      JOIN pg_namespace ns ON ns.oid = p.pronamespace WHERE ns.nspname = 'public'
+    UNION ALL
+    SELECT 'contrainte ' || c.conname, c.conname FROM pg_constraint c
+      JOIN pg_namespace ns ON ns.oid = c.connamespace WHERE ns.nspname = 'public'
+    UNION ALL
+    SELECT 'index ' || indexname, indexname FROM pg_indexes WHERE schemaname = 'public'`);
+
+  const fautifs = objets.filter((o) => mots(o.id).some((m) => francais.has(m))).map((o) => o.ou);
+  check(fautifs.length === 0,
+    `C’EST LA PROPRIÉTÉ QUI COMPTE : aucun nom français dans le schéma public — trouvés : ${fautifs.join(', ')}`);
+
+  // LES VALEURS AUSSI. Le motif de refus repart vers les journaux de l'appelant.
+  const motifs = [
+    (await q('SELECT * FROM verify_api_client($1)', ['pas-une-empreinte']))[0].reason,
+    (await q('SELECT * FROM verify_api_client($1)', [createHash('sha256').update('jamais-vu').digest('hex')]))[0].reason,
+    (await q('SELECT * FROM verify_api_client($1)', [createHash('sha256').update('jeton-a').digest('hex')]))[0].reason,
+  ];
+  check(motifs.join(' | ') === 'malformed digest | unknown token | revoked token',
+    `les motifs de refus sont en anglais — reçus : ${motifs.join(' | ')}`);
+
+  // LE RENOMMAGE N'A RIEN PERDU. Les lignes de 006 et 007 sont toujours là, avec leurs compteurs.
+  const b = (await q(`SELECT calls, links_created, active FROM api_clients WHERE name = 'service-b'`))[0];
+  check(b.links_created === 3 && b.calls >= 1 && b.active === true,
+    'renommer a gardé les données : les compteurs du service-b ont survécu à ALTER ... RENAME');
+
+  // REJOUABLE. Les gardes du 008 existent parce que RENAME COLUMN n'accepte pas IF EXISTS : sans elles,
+  // une base déjà migrée casserait au second passage.
+  await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
+  check((await q(`SELECT count(*)::int c FROM information_schema.columns
+                   WHERE table_schema='public' AND table_name='api_clients' AND column_name='name'`))[0].c === 1,
+    'le 008 se rejoue sans casser : chaque renommage est gardé');
 }
 
 console.log(`liens offerts (lot 1, schéma) : ${n} vérifications passées.`);

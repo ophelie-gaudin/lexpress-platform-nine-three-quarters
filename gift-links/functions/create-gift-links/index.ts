@@ -3,8 +3,9 @@
 // Corps attendu : { urls: string[], channel?, campaign?, expires_in_days? }
 // Réponse       : { links: [{ url, arc_id, token, link, expires_at, content }], rejected: [...] }
 //
-// AUTHENTIFICATION : un secret partagé dans l'en-tête `x-gift-service-token`. Sans lui, n'importe qui
-// pourrait fabriquer des liens vers des articles premium — c'est la porte la plus sensible du service.
+// AUTHENTIFICATION : un jeton PAR SERVICE dans l'en-tête `x-gift-service-token`, révocable un par un.
+// Sans lui, n'importe qui pourrait fabriquer des liens vers des articles premium — c'est la porte la
+// plus sensible du service.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { trierUrls } from '../_shared/arc-id.mjs';
 import { chargerArticle, corpsDeDemonstration } from '../_shared/arc.mjs';
@@ -25,10 +26,31 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'méthode non autorisée' }, 405);
 
-  const attendu = env('GIFT_SERVICE_TOKEN');
-  if (attendu === '' || req.headers.get('x-gift-service-token') !== attendu) {
-    return json({ error: 'non autorisé' }, 401);
-  }
+  // ── QUI APPELLE. Un jeton par service, révocable un par un (migration 006).
+  //
+  // LE JETON EN CLAIR NE QUITTE PAS CETTE FONCTION : on envoie son empreinte SHA-256 à la base. Lire la
+  // table `api_clients` ne donne donc rien d'utilisable, comme pour un mot de passe.
+  //
+  // LE 401 EST NU. La base sait distinguer « jeton inconnu » de « jeton révoqué » ; l'appelant, non.
+  // Le lui dire renseignerait qui cherche à deviner.
+  const presente = req.headers.get('x-gift-service-token') ?? '';
+  if (presente === '') return json({ error: 'non autorisé' }, 401);
+
+  const db = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
+
+  const empreinte = [...new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(presente))
+  )].map((o) => o.toString(16).padStart(2, '0')).join('');
+
+  // PLUS DE SECRET PARTAGÉ. Le repli `GIFT_SERVICE_TOKEN` a vécu du 7 octobre au soir du 7 octobre,
+  // le temps que le job nocturne n8n passe sur son propre jeton — c'est fait, prouvé par 21 liens
+  // attribués. Un secret qui ouvre la porte sans nommer personne est exactement ce qu'on voulait
+  // supprimer : il rendait toute révocation collective.
+  const { data: clients } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  const client = Array.isArray(clients) ? clients[0] : clients;
+  if (!client?.ok) return json({ error: 'non autorisé' }, 401);
+  const clientId: string = client.client_id;
+  const clientName: string = client.name;
 
   let corps: Record<string, unknown>;
   try { corps = await req.json(); } catch { return json({ error: 'corps JSON illisible' }, 400); }
@@ -38,7 +60,6 @@ Deno.serve(async (req) => {
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);
   }
 
-  const db = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
@@ -81,6 +102,9 @@ Deno.serve(async (req) => {
     p_arc_ids: prets.map((p) => p.arcId),
     p_channel: (corps.channel as string) ?? null,
     p_campaign: (corps.campaign as string) ?? null,
+    // QUI DEMANDE. Rattache le lien à son service : créé par lui, et prolongé par lui si la date bouge.
+    // NULL pour l'appelant d'héritage — une absence honnête plutôt qu'une attribution devinée.
+    p_client_id: clientId,
     p_expires_at: Number.isFinite(jours) && jours > 0
       ? new Date(Date.now() + jours * 86400000).toISOString() : null,
   });
@@ -111,5 +135,10 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json({ links: liens, rejected: rejets });
+  // CE QUE CET APPEL A PRODUIT. Compté à la fin, jamais à l'entrée : un appel qui échoue en chemin ne
+  // doit pas porter au compte d'un service des liens qu'il n'a pas obtenus. Aucun plafond aujourd'hui
+  // (décision d'Ophélie, 7 oct.) — mais le jour où il en faudra un, les chiffres seront déjà là.
+  await db.rpc('count_client_links', { p_client_id: clientId, p_links: liens.length });
+
+  return json({ links: liens, rejected: rejets, client: clientName });
 });

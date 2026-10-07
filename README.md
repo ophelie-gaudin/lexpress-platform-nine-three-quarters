@@ -14,7 +14,7 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 50 vérifications du schéma et 58 vérifications du traitement des articles.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 88 vérifications du schéma et 91 vérifications du traitement des articles.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
@@ -43,11 +43,13 @@ Il existe une seule page dynamique de lecture, pas une page à générer par art
 | `validate-gift-links-*.mjs` | Tests locaux |
 | `docs/frontend.md` | Contrat à respecter par la page Lovable |
 
-## État connu au 5 octobre 2026
+## État connu au 8 octobre 2026
 
-Le README du projet source rapporte le schéma appliqué, la fonction déployée, la page publiée et la lecture de corps Arc réels vérifiée en ligne. Il rapporte également la vérification des cinq statuts et du cas d’erreur technique avec réessai. L’extraction de ce dépôt ne constitue pas une nouvelle vérification de la production.
+Schéma appliqué, fonction déployée, page publiée, lecture de corps Arc réels vérifiée en ligne. Les cinq statuts de lecture et le cas d’erreur technique avec réessai sont vérifiés. L’extraction de ce dépôt ne constitue pas une nouvelle vérification de la production ; ces faits viennent du journal du projet source.
 
-Restent à faire : archivage des données, intégration Piano et raccordement des liens offerts dans la chaîne WhatsApp de production. Le raccordement WhatsApp est documenté comme présent en test uniquement. Les compteurs d’ouverture en base existent déjà.
+Depuis le 5 octobre : les images et les citations du corps sont rendues, chaque service appelant a son propre jeton, chaque lien sait qui l’a créé et qui l’a prolongé, et le schéma est entièrement en anglais. Le secret partagé unique a été supprimé le 7 octobre au soir, après que la bascule du job nocturne a été prouvée.
+
+Restent à faire : archivage des données, intégration Piano et raccordement des liens offerts dans la chaîne WhatsApp de production. Ce raccordement est présent en test seulement : la production envoie encore l’URL nue du site, c’est-à-dire le mur d’abonnement que le lien offert existe pour éviter. Les compteurs d’ouverture en base existent déjà.
 
 ## Accès et configuration
 
@@ -63,17 +65,93 @@ Service existant :
 | --- | --- |
 | `SUPABASE_URL` | URL du projet backend |
 | `SUPABASE_SERVICE_ROLE_KEY` | Accès serveur à la base ; jamais dans le frontend |
-| `GIFT_SERVICE_TOKEN` | Secret partagé exigé dans `x-gift-service-token` ; vide = tout refusé |
 | `ARC_BASE` | URL de l’API Arc, par exemple `https://api.lexpress.arcpublishing.com` |
 | `ARC_TOKEN` | Jeton de lecture Arc, côté serveur |
 | `ARC_SITE` | Site Arc, `lexpress` par défaut |
 | `GIFT_LINK_BASE` | Origine des URLs rendues, `https://articles.lexpress.fr` par défaut |
 
-`.env.example` inventorie ces variables ; la fonction lit les variables du runtime Supabase, pas un fichier local automatiquement. La page Lovable reçoit uniquement l’URL Supabase et la clé publique du projet. Le secret de création de liens appartient aux appelants serveur.
+`.env.example` inventorie ces variables ; la fonction lit les variables du runtime Supabase, pas un fichier local automatiquement. La page Lovable reçoit uniquement l’URL Supabase et la clé publique du projet — celle de rôle `anon`, faite pour être publiée.
+
+**Aucune variable d’environnement ne porte plus de secret d’appel.** L’authentification se fait par un jeton par service, stocké en base sous forme d’empreinte. Voir la section suivante.
+
+## Obtenir un jeton de service
+
+**Chaque service appelant a son propre jeton**, et un seul. C’est lui qui identifie l’appelant, lui attribue les liens qu’il fabrique, et permet de le couper sans couper personne d’autre. Le secret partagé unique qui ouvrait l’API jusqu’au 7 octobre 2026 a été supprimé : il ne nommait personne, et le révoquer aurait coupé tout le monde d’un coup.
+
+### Demander un accès
+
+Écrire à la personne responsable du service — Ophélie est le point de contact indiqué dans le projet source — en donnant **le nom du service appelant**, pas celui d’une personne. Ce nom apparaîtra dans chaque réponse de l’API et dans le journal d’attribution des liens : `newsletter-quotidienne` se lit mieux que `jean`, et survit à un départ.
+
+Le jeton est montré **une seule fois**, à sa création. Il n’est jamais retrouvable ensuite : la base n’en garde que l’empreinte SHA-256. Le ranger tout de suite dans le gestionnaire de secrets du service appelant.
+
+### Créer un jeton (administration)
+
+Depuis une session SQL autorisée sur le projet Supabase. Le jeton en clair ne transite jamais par la base — on ne lui donne que son empreinte, exactement comme pour un mot de passe.
+
+```sh
+# 1. Engendrer le jeton sur sa propre machine. 64 caractères hexadécimaux.
+JETON=$(openssl rand -hex 32)
+
+# 2. Calculer son empreinte. C'est ELLE qu'on envoie à la base.
+printf '%s' "$JETON" | shasum -a 256 | cut -d' ' -f1
+
+# 3. Transmettre $JETON au service appelant par un canal sûr, puis l'oublier.
+```
+
+```sql
+-- Avec l'empreinte obtenue à l'étape 2, jamais avec le jeton.
+SELECT public.create_api_client(
+  'newsletter-quotidienne',                                             -- nom du service
+  '3b8c…l empreinte sha256 en minuscules, 64 caracteres hexadecimaux…',
+  'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'              -- note libre, facultative
+);
+```
+
+### Utiliser le jeton
+
+Le passer dans l’en-tête `x-gift-service-token` à chaque appel. La fonction en calcule l’empreinte et la compare à la base ; le jeton en clair ne quitte jamais l’appelant et la fonction.
+
+```sh
+curl --request POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  --header "x-gift-service-token: ${GIFT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY"]}'
+```
+
+La réponse nomme le service reconnu dans son champ `client`. C’est le moyen le plus simple de vérifier qu’on appelle avec le bon jeton :
+
+```json
+{ "links": [ … ], "rejected": [], "client": "newsletter-quotidienne" }
+```
+
+**Un jeton absent, inconnu ou révoqué reçoit un `401` nu**, sans motif. La base sait distinguer les trois cas et les journalise ; l’appelant ne l’apprend pas. Le lui dire renseignerait qui cherche à deviner.
+
+### Révoquer
+
+```sql
+SELECT public.revoke_api_client('newsletter-quotidienne');  -- rend true, ou false si déjà révoqué
+```
+
+La ligne **reste en base** : on garde la trace de ce que ce service a créé, et les liens qu’il a fabriqués continuent de fonctionner. Révoquer ferme la porte, cela n’efface pas l’histoire. Les autres services ne sont pas affectés — c’est tout l’intérêt d’un jeton par appelant.
+
+### Savoir qui a fait quoi
+
+Chaque lien porte le service qui l’a créé et le dernier qui en a repoussé la date de fin.
+
+```sql
+SELECT title, created_by, updated_by, updated_at, expires_at, opens
+FROM public.gift_links_by_client
+ORDER BY created_at DESC;
+```
+
+`created_by` ne change plus jamais. `updated_by` ne bouge qu’à une **vraie** modification : redemander un lien déjà valable plus longtemps ne fait pas de vous le dernier intervenant, sinon la colonne dirait « dernier à avoir demandé » au lieu de « dernier à avoir modifié ». Les liens créés avant le 7 octobre 2026 portent `NULL` : l’historique commence là, il ne se reconstruit pas.
+
+Les compteurs par service vivent dans `api_clients` : `calls`, `links_created`, `last_used_at`. Aucun plafond n’est imposé aujourd’hui, mais les chiffres sont là le jour où il en faudra un.
 
 ## Contrat de création
 
-`POST /functions/v1/create-gift-links`, JSON, en-tête `x-gift-service-token` obligatoire. Voici un corps de requête ; remplacer l’URL par un article à offrir :
+`POST /functions/v1/create-gift-links`, JSON, en-tête `x-gift-service-token` obligatoire — le jeton du service appelant, voir la section précédente. Voici un corps de requête ; remplacer l’URL par un article à offrir :
 
 ```json
 {
@@ -90,6 +168,7 @@ La réponse contient deux listes :
 
 - `links` : `url`, `arc_id`, `token`, `link`, `expires_at`, `content`, `source`, `state`.
 - `rejected` : `url` et `erreur` pour chaque refus.
+- `client` : le nom du service reconnu par son jeton.
 
 `content` vaut `full` ou `preview`. `source` vaut `arc` ou `page-publique`. `state` vaut `created`, `extended` ou `unchanged`. Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés : contrôler les deux listes. Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.
 
@@ -104,12 +183,12 @@ Avant l’appel :
 | « La DGSE investit dans l’IA… » | Lien existant avec le token `11111111111111111111111111111111`, valable jusqu’au 10 octobre 2026 à 13 h UTC |
 | « En 2027, faut-il mentir pour survivre… » | Aucun lien existant |
 
-Renseigner `GIFT_SERVICE_TOKEN` dans l’environnement de l’appelant serveur avec le secret fourni par Ophélie, puis envoyer :
+Renseigner `GIFT_TOKEN` dans l’environnement de l’appelant serveur avec le jeton de service obtenu, puis envoyer :
 
 ```sh
 curl --request POST \
   'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
-  --header "x-gift-service-token: ${GIFT_SERVICE_TOKEN}" \
+  --header "x-gift-service-token: ${GIFT_TOKEN}" \
   --header 'Content-Type: application/json' \
   --data '{
     "urls": [
@@ -148,7 +227,8 @@ Si Arc fournit le contenu complet des deux articles et que la mise en cache et l
       "state": "created"
     }
   ],
-  "rejected": []
+  "rejected": [],
+  "client": "newsletter-quotidienne"
 }
 ```
 
@@ -158,12 +238,13 @@ Comment lire cette réponse :
 - **Second article — `created`** : le service crée un nouveau token et son lien, valable jusqu’au 20 octobre.
 - **`content: "full"`** : les deux liens donnent accès au corps de l’article. Si Arc ne fournit pas le corps et que le repli public fonctionne, vérifier `content: "preview"` avant de promettre un accès complet.
 - **`rejected: []`** : aucun article n’a été refusé. Toujours vérifier cette liste, même avec HTTP 200.
+- **`client`** : le service que le jeton a identifié. Les deux liens lui sont attribués en base.
 
 Diffuser la valeur de **`link`** pour chaque article, et non l’URL originale `url`, qui reste soumise au mur d’abonnement du site. Si le lien existant était déjà valable au-delà du 20 octobre, il conserverait sa date plus lointaine et serait rendu avec `state: "unchanged"`.
 
 | HTTP | Sens |
 | --- | --- |
-| 401 | Secret absent, faux ou non configuré |
+| 401 | Jeton absent, inconnu ou révoqué — sans distinction, volontairement |
 | 400 | JSON illisible ou aucune URL exploitable |
 | 405 | Méthode autre que POST/OPTIONS |
 | 500 | Échec de mise en cache ou de création en base |
@@ -183,7 +264,22 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 
 ## Installer dans un autre environnement
 
-Utiliser un projet Supabase dédié. Appliquer `001-schema.sql`, `002-author.sql`, puis `003-un-lien-par-article.sql` dans cet ordre sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
+Utiliser un projet Supabase dédié. Appliquer **les huit fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
+
+| Fichier | Ce qu’il apporte |
+| --- | --- |
+| `001-schema.sql` | tables `articles`, `gift_links`, `gift_link_opens` ; création et lecture |
+| `002-author.sql` | la signature de l’auteur, rendue jusqu’à la page |
+| `003-un-lien-par-article.sql` | un seul lien par article, prolongé plutôt que recréé |
+| `004-jeu-d-essai.sql` | jeu fictif, **facultatif** : un lien par état pour la recette |
+| `005-identifiant-envoi.sql` | l’identifiant d’envoi `?s=` et le groupe de campagne |
+| `006-clients-api.sql` | **un jeton par service** — sans lui, aucun appel n’est authentifiable |
+| `007-attribution-liens.sql` | qui a créé chaque lien, qui l’a prolongé |
+| `008-noms-anglais.sql` | tout le schéma en anglais, par renommage |
+
+Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
+
+Créer ensuite au moins un jeton de service, sans quoi l’API est installée mais inutilisable.
 
 Configurer les variables serveur, exécuter les tests et générer le bundle. Déployer ce bundle comme fonction `create-gift-links` avec le mécanisme Supabase retenu par l’équipe. Ce dépôt ne contient pas encore de script de déploiement ni de configuration de passerelle versionnée : vérifier notamment que la passerelle laisse atteindre le contrôle `x-gift-service-token`, puis qu’un appel sans secret est refusé. Il ne faut pas présenter cette extraction comme une installation en une commande.
 
@@ -215,8 +311,8 @@ Ne pas supprimer un lien diffusé : poser `withdrawn_at` conserve la ligne et do
 - Déploiement et configuration distante à rendre reproductibles ; CI à ajouter selon l’hébergement Git retenu.
 - Aucun écran d’administration inclus : création via API, retrait et prolongation possibles en SQL.
 - Archivage/rétention, Piano et attribution entre campagnes à compléter.
-- Tests HTTP de la fonction et tests du frontend publié à compléter : les 108 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
+- Tests HTTP de la fonction et tests du frontend publié à compléter : les 179 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
 
 ## Provenance
 
-Extraction locale préparée le 5 octobre 2026 à partir du projet L’Express, commit de référence `8dced80c02e62222144e7b891ae9f1c046f8e325`, avec le README du service dans l’état du dossier de travail. Les sources du backend et les tests ont été copiés sans modification fonctionnelle. Les scripts restent à la racine afin de conserver les chemins déjà testés. Les workflows et données de l’agent WhatsApp ne sont pas inclus.
+Extraction locale préparée le 5 octobre 2026 à partir du projet L’Express, puis réalignée le 8 octobre 2026 sur le commit `6f9516d` (« un jeton par service, et chaque lien sait qui l’a demandé »). Les sources du backend et les tests ont été copiés sans modification fonctionnelle. Les scripts restent à la racine afin de conserver les chemins déjà testés. Les workflows et données de l’agent WhatsApp ne sont pas inclus.

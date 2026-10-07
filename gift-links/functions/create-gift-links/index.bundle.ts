@@ -160,14 +160,79 @@ function corpsDeDemonstration(article) {
   ].filter((l) => l !== '').join('\n\n');
 }
 
+// CE QU'ON GARDE DU CORPS, ET CE QU'ON ÉCARTE — explicitement (7 oct. 2026).
+//
+// Jusqu'ici le corps ne retenait que `type === 'text'`. Tout le reste tombait : images, citations,
+// encadrés. Ce n'était pas une décision, c'était un effet de bord — et un article long arrivait sans une
+// seule respiration. Ophélie l'a relevé sur un article dont les deux citations avaient disparu.
+//
+// GARDÉS : le texte, les citations, les images. Ce sont du propos et du regard, pas de l'habillage.
+//
+// ÉCARTÉS, ET C'EST VOULU : `link_list` et `interstitial_link` — les « à lire aussi » — mènent au
+// paywall. Les servir dans un article OFFERT reviendrait à promettre une lecture libre puis à buter le
+// lecteur trois paragraphes plus loin. `custom_embed`, `oembed_response`, `raw_html` et le reste sont
+// écartés faute de pouvoir en garantir le rendu sur une page qu'on ne maîtrise pas entièrement.
+//
+// TOUT TYPE INCONNU TOMBE. Un format Arc qu'on n'a jamais vu ne doit pas se retrouver tel quel dans la
+// page : mieux vaut un paragraphe manquant qu'un bloc illisible.
+const echapper = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const sansBalises = (v) => String(v).replace(/<[^>]*>/g, '').trim();
+const texteDe = (liste) => (Array.isArray(liste) ? liste : [])
+  .filter((x) => x?.type === 'text' && typeof x.content === 'string')
+  .map((x) => x.content.trim()).filter((x) => x !== '').join(' ');
+
+function rendreElement(e) {
+  if (!e || typeof e !== 'object') return '';
+
+  if (e.type === 'text') return typeof e.content === 'string' ? e.content.trim() : '';
+
+  if (e.type === 'quote') {
+    // La citation porte ses propres content_elements, et `citation` pour l'attribution — vide le plus
+    // souvent sur un pullquote. Relevé sur un vrai document le 7 oct.
+    const propos = texteDe(e.content_elements);
+    if (propos === '') return '';
+    const signature = typeof e.citation?.content === 'string' ? sansBalises(e.citation.content) : '';
+    return '<blockquote>' + propos + (signature ? '<cite>' + echapper(signature) + '</cite>' : '') + '</blockquote>';
+  }
+
+  if (e.type === 'image') {
+    // FORME NON OBSERVÉE sur un corps réel au moment d'écrire : les articles examinés n'en portaient
+    // pas. On reste donc défensif — sans URL https exploitable, l'élément tombe plutôt que de produire
+    // une image brisée.
+    const url = typeof e.url === 'string' ? e.url.trim() : '';
+    if (!/^https:\/\//.test(url)) return '';
+    const legende = [e.caption, e.subtitle, e.credits_caption_display]
+      .find((x) => typeof x === 'string' && x.trim() !== '') ?? '';
+    const alt = sansBalises(legende) || 'Illustration de l\'article';
+    return '<figure><img src="' + echapper(url) + '" alt="' + echapper(alt) + '" loading="lazy">'
+      + (legende ? '<figcaption>' + legende + '</figcaption>' : '') + '</figure>';
+  }
+
+  return '';
+}
+
+// UN CORPS QUI NE DIT RIEN N'EST PAS UN CORPS (7 oct. 2026).
+//
+// Relevé sur une page de dossier : Arc rendait un unique élément texte valant « <br/> ». Cinq caractères,
+// donc non vide, donc annoncé « article complet » — et la page promettait une lecture offerte pour
+// n'afficher que son chapeau. Le mensonge qu'on évite partout ailleurs, par une faute de mesure.
+//
+// ON MESURE DONC LA SUBSTANCE, pas la longueur : du texte une fois les balises retirées, OU une image.
+// Un article qui ne serait qu'une photo légendée reste un article.
+function sansSubstance(html) {
+  if (typeof html !== 'string' || html.trim() === '') return true;
+  if (/<img\b/i.test(html)) return false;
+  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').trim() === '';
+}
+
 /** Lecture d'un document Arc. Le corps est la concaténation des éléments de texte de content_elements. */
 function depuisArc(doc, repliUrl) {
   if (!doc || typeof doc !== 'object') return null;
   const titre = doc.headlines?.basic ?? doc.headline?.basic ?? null;
   if (!titre) return null;
   const corps = Array.isArray(doc.content_elements)
-    ? doc.content_elements.filter((e) => e?.type === 'text' && typeof e.content === 'string')
-        .map((e) => e.content).join('\n\n').trim()
+    ? doc.content_elements.map(rendreElement).filter((h) => h !== '').join('\n\n').trim()
     : '';
   return {
     title: titre,
@@ -178,7 +243,7 @@ function depuisArc(doc, repliUrl) {
     author: (Array.isArray(doc.credits?.by) ? doc.credits.by : [])
       .map((x) => x?.name).filter((x) => typeof x === 'string' && x.trim() !== '').join(', ') || null,
     published_at: doc.publish_date ?? doc.first_publish_date ?? null,
-    body: corps === '' ? null : corps,   // corps vide = aperçu, pas « ok » menteur
+    body: sansSubstance(corps) ? null : corps,   // corps vide = aperçu, pas « ok » menteur
   };
 }
 
@@ -187,8 +252,9 @@ function depuisArc(doc, repliUrl) {
 // Corps attendu : { urls: string[], channel?, campaign?, expires_in_days? }
 // Réponse       : { links: [{ url, arc_id, token, link, expires_at, content }], rejected: [...] }
 //
-// AUTHENTIFICATION : un secret partagé dans l'en-tête `x-gift-service-token`. Sans lui, n'importe qui
-// pourrait fabriquer des liens vers des articles premium — c'est la porte la plus sensible du service.
+// AUTHENTIFICATION : un jeton PAR SERVICE dans l'en-tête `x-gift-service-token`, révocable un par un.
+// Sans lui, n'importe qui pourrait fabriquer des liens vers des articles premium — c'est la porte la
+// plus sensible du service.
 
 
 const env = (k: string) => Deno.env.get(k) ?? '';
@@ -207,10 +273,31 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'méthode non autorisée' }, 405);
 
-  const attendu = env('GIFT_SERVICE_TOKEN');
-  if (attendu === '' || req.headers.get('x-gift-service-token') !== attendu) {
-    return json({ error: 'non autorisé' }, 401);
-  }
+  // ── QUI APPELLE. Un jeton par service, révocable un par un (migration 006).
+  //
+  // LE JETON EN CLAIR NE QUITTE PAS CETTE FONCTION : on envoie son empreinte SHA-256 à la base. Lire la
+  // table `api_clients` ne donne donc rien d'utilisable, comme pour un mot de passe.
+  //
+  // LE 401 EST NU. La base sait distinguer « jeton inconnu » de « jeton révoqué » ; l'appelant, non.
+  // Le lui dire renseignerait qui cherche à deviner.
+  const presente = req.headers.get('x-gift-service-token') ?? '';
+  if (presente === '') return json({ error: 'non autorisé' }, 401);
+
+  const db = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
+
+  const empreinte = [...new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(presente))
+  )].map((o) => o.toString(16).padStart(2, '0')).join('');
+
+  // PLUS DE SECRET PARTAGÉ. Le repli `GIFT_SERVICE_TOKEN` a vécu du 7 octobre au soir du 7 octobre,
+  // le temps que le job nocturne n8n passe sur son propre jeton — c'est fait, prouvé par 21 liens
+  // attribués. Un secret qui ouvre la porte sans nommer personne est exactement ce qu'on voulait
+  // supprimer : il rendait toute révocation collective.
+  const { data: clients } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  const client = Array.isArray(clients) ? clients[0] : clients;
+  if (!client?.ok) return json({ error: 'non autorisé' }, 401);
+  const clientId: string = client.client_id;
+  const clientName: string = client.name;
 
   let corps: Record<string, unknown>;
   try { corps = await req.json(); } catch { return json({ error: 'corps JSON illisible' }, 400); }
@@ -220,7 +307,6 @@ Deno.serve(async (req) => {
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);
   }
 
-  const db = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
@@ -263,6 +349,9 @@ Deno.serve(async (req) => {
     p_arc_ids: prets.map((p) => p.arcId),
     p_channel: (corps.channel as string) ?? null,
     p_campaign: (corps.campaign as string) ?? null,
+    // QUI DEMANDE. Rattache le lien à son service : créé par lui, et prolongé par lui si la date bouge.
+    // NULL pour l'appelant d'héritage — une absence honnête plutôt qu'une attribution devinée.
+    p_client_id: clientId,
     p_expires_at: Number.isFinite(jours) && jours > 0
       ? new Date(Date.now() + jours * 86400000).toISOString() : null,
   });
@@ -293,5 +382,10 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json({ links: liens, rejected: rejets });
+  // CE QUE CET APPEL A PRODUIT. Compté à la fin, jamais à l'entrée : un appel qui échoue en chemin ne
+  // doit pas porter au compte d'un service des liens qu'il n'a pas obtenus. Aucun plafond aujourd'hui
+  // (décision d'Ophélie, 7 oct.) — mais le jour où il en faudra un, les chiffres seront déjà là.
+  await db.rpc('count_client_links', { p_client_id: clientId, p_links: liens.length });
+
+  return json({ links: liens, rejected: rejets, client: clientName });
 });
