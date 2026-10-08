@@ -35,6 +35,18 @@ for (const [cle, valeur] of new URLSearchParams(location.search))
   if (valeur && (cle.startsWith('at_') || cle === 's')) abo.searchParams.set(cle, valeur);
 ```
 
+| Paramètre | Rôle | Journalisé en base |
+| --- | --- | --- |
+| `s` | identifiant d'ENVOI, 32 hexadécimaux. Le token est commun à l'article ; `s` désigne l'envoi | oui, `gift_link_opens.send_id` |
+| `at_medium` | le canal — `Whatsapp`, `Newsletter`… | oui, `utm_source` |
+| `at_campaign` | la campagne | oui, `utm_campaign` |
+| `at_campaign_group` | le segment du prospect | oui, `campaign_group` |
+| `at_*` à venir | toute dimension AT Internet future | **non** — transmise au site, pas stockée |
+
+La règle est un **préfixe**, pas une liste figée : ajouter une dimension de suivi ne demande aucune modification de la page. En revanche, la conserver en base demanderait une colonne, donc une migration.
+
+Tout le reste est écarté — `refTarif`, `utm_source`, `id` et les autres. L'URL d'un lien offert est publique et se transfère ; sans cette barrière, n'importe qui glisserait ses propres paramètres dans une URL de lexpress.fr.
+
 Le frontend devient ainsi **agnostique du canal** : il ne sait pas s'il sert WhatsApp, une newsletter ou un autre service, et c'est exactement ce qu'il doit faire. Jusqu'au 8 octobre 2026 il codait en dur `at_medium=Whatsapp` et lisait `at_campaign_group` dans le champ `campaign` rendu par la RPC — ce champ a disparu, et l'attribution appartient à l'envoi, pas au lien.
 
 La chaîne est alors complète et dans le même vocabulaire des deux côtés : la sollicitation pose les paramètres sur le lien diffusé, `gift_link_opens` enregistre la lecture avec son segment et son identifiant d'envoi, et Piano reçoit les mêmes sur la conversion. `s` est le seul maillon qui survit au départ vers lexpress.fr.

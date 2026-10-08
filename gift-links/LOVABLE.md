@@ -98,9 +98,13 @@ for (const [cle, valeur] of p)
 // href = abo.toString()
 ```
 
-**Ce qui change (8 oct. 2026)** — avant, la page posait `refTarif=1329`, codait en dur
-`at_medium=Whatsapp` et `at_campaign=prospects`, et lisait `at_campaign_group` dans le champ `campaign`
-rendu par la base. Les trois étaient faux pour des raisons différentes.
+**Contrat actualisé le 8 octobre 2026.** Les anciennes consignes prévoyaient
+`refTarif=1329`, des valeurs fixes `at_medium=Whatsapp` / `at_campaign=prospects`
+et un segment relu dans le champ `campaign` de la base. Ce texte décrivait une
+intention, pas le fonctionnement réellement publié. Le journal de déploiement
+confirme que le bundle lisait déjà `at_campaign_group` dans l’URL. Les problèmes
+ci-dessous expliquent pourquoi ces anciennes consignes ne doivent pas être
+réintroduites ; ils ne prouvent pas une ancienne régression de la page.
 
 - **Le canal codé en dur.** Il était vrai quand WhatsApp était le seul appelant. Le service s'ouvre à
   d'autres : une newsletter qui diffuse un lien offert verrait ses abonnements attribués à WhatsApp.
@@ -126,6 +130,27 @@ Le bouton reste affiché **dans les cinq états**, refus compris. Les paramètre
 présents même sur un lien expiré ou retiré : la conversion reste attribuée à ce qui a amené la personne
 jusque-là.
 
+### Les paramètres transmis
+
+La règle est un **préfixe**, pas une liste figée : tout `at_*` passe, plus `s`. Ajouter une dimension de
+suivi ne demande donc aucune modification de la page — il suffit de la poser sur le lien diffusé.
+
+| Paramètre | Rôle | Qui le pose |
+| --- | --- | --- |
+| `s` | identifiant d'ENVOI, 32 hexadécimaux. Le token est commun à l'article ; `s` désigne l'envoi, et rend la lecture attribuable | l'appelant qui diffuse |
+| `at_medium` | le canal — `Whatsapp`, `Newsletter`, `Whatsapp_test`… | l'appelant qui diffuse |
+| `at_campaign` | la campagne | l'appelant qui diffuse |
+| `at_campaign_group` | le segment du prospect — `prospects_chauds`, `prospects_abandon`, `prospects_paid` | l'appelant qui diffuse |
+| `at_*` (à venir) | toute dimension AT Internet future | passe sans toucher à la page |
+
+**Écartés** : tout le reste. `refTarif`, `utm_source`, `id` et les autres sont ignorés. L'URL d'un lien
+offert est publique et se transfère : sans cette barrière, n'importe qui glisserait ses propres
+paramètres dans une URL de lexpress.fr.
+
+**Seuls `s`, `at_medium`, `at_campaign` et `at_campaign_group` sont lus par la base** — ce sont les
+colonnes de `gift_link_opens`. Un `at_*` nouveau sera transmis au site mais pas journalisé ici ; pour le
+conserver en base il faudra une colonne, donc une migration.
+
 ### Ce que ça donne bout en bout
 
 ```
@@ -135,6 +160,15 @@ lecture          gift_link_opens : une ligne, avec ce segment et cet envoi
 abonnement       /offres?s=<envoi>&at_medium=Whatsapp&at_campaign=prospects
                  &at_campaign_group=prospects_chauds
 ```
+
+**Vérifié en ligne le 8 octobre 2026**, dans un navigateur, sur la page publiée :
+
+| Cas | Résultat |
+| --- | --- |
+| lien valide avec `s`, trois `at_*`, plus `refTarif`, `utm_source` et `id` | les quatre premiers transmis, les trois autres écartés |
+| `at_variante`, une dimension qui n'existe pas | transmise — la liste blanche est bien un préfixe |
+| lien retiré, paramètres `Newsletter` | bouton affiché, paramètres transmis, aucune valeur WhatsApp inventée |
+| lien valide sans aucun paramètre | `/offres` nu, rien d'ajouté |
 
 Même vocabulaire des deux côtés : la base sait qui a lu, Piano sait qui s'est abonné, et `s` relie les
 deux. C'est le seul maillon qui survit au départ vers lexpress.fr.
