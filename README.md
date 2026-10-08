@@ -49,27 +49,37 @@ compare à la base ; le jeton en clair ne quitte jamais l'appelant et la fonctio
 
 #### macOS et Linux
 
-Trois valeurs, puis l'appel. **Aucune ligne n'en continue une autre** : on peut tout coller d'un bloc,
-ou ligne par ligne, rien ne casse.
+Remplacer le jeton et les URLs, puis coller le bloc entier dans le terminal.
 
 ```sh
-URL='https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links'
-JETON='collez ici votre jeton'
-CORPS='{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}'
-
-curl --silent -X POST "$URL" -H "x-gift-service-token: $JETON" -H 'Content-Type: application/json' -d "$CORPS" | python3 -m json.tool
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  -H 'x-gift-service-token: VOTRE_JETON' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "urls": [
+          "https://www.lexpress.fr/politique/affaire-bardella-les-jours-dapres-au-rassemblement-national-ULRPQWYZ5JCKTBM3LE7MJBVNAQ/",
+          "https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y"
+        ],
+        "expires_in_days": 15
+      }' \
+  | python3 -m json.tool
 ```
 
-Pour offrir plusieurs articles d'un coup, les séparer par une virgule dans `CORPS` :
+Un article ou dix : il suffit d'ajouter des lignes dans `urls`, séparées par une virgule.
 
-```sh
-CORPS='{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ","https://www.lexpress.fr/…-RQOLMEM5NZE3BNTWPJEEGC5B5Y"],"expires_in_days":15}'
-```
+`| python3 -m json.tool` met la réponse en page. Sans lui, elle arrive sur une seule ligne qui déborde
+de l'écran. `python3` est livré avec macOS et avec Linux, il n'y a rien à installer.
 
-> **Pourquoi pas de `\` en fin de ligne**, comme on en voit partout ailleurs ? Parce qu'il ne protège
-> que le retour à la ligne **immédiat**. Un seul espace derrière lui — qu'un copier-coller suffit à
-> introduire — et tout se défait : le shell prend la ligne suivante pour une commande et répond
-> `no such file or directory: https://…`. Avec des variables, chaque ligne se suffit à elle-même.
+> **Si le terminal répond `no such file or directory: https://…`**, c'est qu'un espace s'est glissé
+> derrière un `\` au collage. Le `\` ne protège que le retour à la ligne **immédiat** : le moindre
+> caractère derrière lui et la commande se coupe en deux.
+>
+> Dans ce cas, la même chose sur une seule ligne, qui ne peut pas casser :
+>
+> ```sh
+> curl --silent -X POST 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' -H 'x-gift-service-token: VOTRE_JETON' -H 'Content-Type: application/json' -d '{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}' | python3 -m json.tool
+> ```
 
 #### Windows, dans PowerShell
 
@@ -147,11 +157,18 @@ Avant l’appel :
 Renseigner `GIFT_TOKEN` dans l’environnement de l’appelant serveur avec le jeton de service obtenu, puis envoyer :
 
 ```sh
-URL='https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links'
-JETON='collez ici votre jeton'
-CORPS='{"urls":["https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY","https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y"],"expires_in_days":15}'
-
-curl --silent -X POST "$URL" -H "x-gift-service-token: $JETON" -H 'Content-Type: application/json' -d "$CORPS" | python3 -m json.tool
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  -H 'x-gift-service-token: VOTRE_JETON' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "urls": [
+          "https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY",
+          "https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y"
+        ],
+        "expires_in_days": 15
+      }' \
+  | python3 -m json.tool
 ```
 
 Si Arc fournit le contenu complet des deux articles et que la mise en cache et la création réussissent, la réponse **HTTP 200** a cette forme :
@@ -225,11 +242,15 @@ façons de la rendre lisible, **sans rien installer et sans rien télécharger**
 commande suffit :
 
 ```sh
-URL='https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links'
-JETON='collez ici votre jeton'
-CORPS='{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}'
-
-curl --silent -X POST "$URL" -H "x-gift-service-token: $JETON" -H 'Content-Type: application/json' -d "$CORPS" | python3 -m json.tool
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  -H 'x-gift-service-token: VOTRE_JETON' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "urls": ["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],
+        "expires_in_days": 15
+      }' \
+  | python3 -m json.tool
 ```
 
 ```json
@@ -445,10 +466,12 @@ l'empreinte, et c'est tout l'intérêt.
 Le seul contrôle qui prouve que les deux valeurs sont à leur place :
 
 ```sh
-URL='https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links'
-CORPS='{"urls":["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY"]}'
-
-curl --silent -X POST "$URL" -H "x-gift-service-token: $JETON" -H 'Content-Type: application/json' -d "$CORPS" | python3 -m json.tool
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  -H "x-gift-service-token: ${JETON}" \
+  -H 'Content-Type: application/json' \
+  -d '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY"]}' \
+  | python3 -m json.tool
 ```
 
 La réponse doit porter `"client": "newsletter-quotidienne"`. Un `401` signifie que l'empreinte
