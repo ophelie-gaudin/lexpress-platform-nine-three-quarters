@@ -1,6 +1,6 @@
-# L’Express — liens d’articles offerts
+# L’Express - Platform 9 3/4
 
-Service interne qui transforme des URLs L’Express en liens temporaires donnant accès à une copie du contenu premium. Un autre canal peut appeler ce service sans dépendre de l’agent WhatsApp.
+Service interne qui transforme des URLs L’Express en liens temporaires donnant accès à une copie du contenu premium. Un passage dérobé vers un article payant, ouvert à qui reçoit le lien et fermé à la date dite. Un autre canal peut appeler ce service sans dépendre de l’agent WhatsApp.
 
 Ce dépôt est une extraction autonome du backend et de ses tests. La page de lecture est hébergée dans Lovable ; ses sources ne sont pas incluses. Partager ce dépôt en privé avec les intervenants techniques de L’Express : la fixture Arc contient un exemple réel de contenu éditorial.
 
