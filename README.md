@@ -86,8 +86,8 @@ La réponse contient deux listes :
 `content` vaut `full` ou `preview`. `source` vaut `arc` ou `page-publique`. `state` vaut `created`, `extended` ou `unchanged`. Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés : contrôler les deux listes. Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.
 
 > **Cette réponse arrive sur une seule ligne**, qui déborde de l'écran. La section
-> [« Lire la réponse sans lunettes »](#lire-la-réponse-sans-lunettes) montre la même commande avec et
-> sans le raccourci qui la rend lisible — sans rien installer.
+> [« Lire la réponse sans lunettes »](#lire-la-réponse-sans-lunettes) montre deux façons de la rendre
+> lisible, sans rien installer ni télécharger.
 
 ### Exemple : prolonger un lien et en créer un autre dans la même requête
 
@@ -169,86 +169,81 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 
 ## Lire la réponse sans lunettes
 
-**La même commande, deux fois.** La seule différence tient aux quelques caractères ajoutés à la fin.
+La réponse arrive sur **une seule ligne**, qui déborde de l'écran :
 
-### Sans le raccourci
+```
+{"links":[{"url":"https://www.lexpress.fr/politique/affaire-bardella-les-jours-dapres-au-rassemblement-national-ULRPQWYZ5JCKTBM3LE7MJBVNAQ/","arc_id":"ULRPQWYZ5JCKTBM3LE7MJBVNAQ","token":"d30067cd211a4cdbb59c8ddc7c5ceeaf","link":"https://articles.lexpress.fr/a/d30067cd…
+```
+
+Les liens y sont — chaque `"link":"https://articles.lexpress.fr/a/…"` — mais il faut les pêcher. Deux
+façons de la rendre lisible, **sans rien installer et sans rien télécharger**.
+
+### Dans le terminal : ajouter sept caractères
+
+`python3` est livré avec macOS et avec Linux. Ajouter **` | python3 -m json.tool`** à la fin de la
+commande suffit :
 
 ```sh
 curl --silent --request POST \
   'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
   --header "x-gift-service-token: ${GIFT_TOKEN}" \
   --header 'Content-Type: application/json' \
-  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY",
-                    "https://www.lexpress.fr/…-RQOLMEM5NZE3BNTWPJEEGC5B5Y"]}'
+  --data '{"urls": ["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"]}' \
+  | python3 -m json.tool
 ```
 
-Ce que le terminal affiche — une seule ligne, qui déborde de l'écran :
-
-```
-{"links":[{"url":"https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY","arc_id":"LQBW5JK75BDOBJHRA76NRFPJFY","token":"ba9037a631eb4cc7ba8f173bde5a5929","link":"https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929","expires_at":"2026-11-07T03:30:24.151+00:00","content":"full","source":"arc","state":"unchanged"},{"url":"https://www.lexpress.fr/politique/elections/en-2027-…
-```
-
-Les liens y sont — deux fois `"link":"https://articles.lexpress.fr/a/…"` — mais il faut les pêcher.
-
-### Avec le raccourci
-
-La même commande, plus **` | python3 afficher-les-liens.py`** au bout.
-
-```sh
-curl --silent --request POST \
-  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
-  --header "x-gift-service-token: ${GIFT_TOKEN}" \
-  --header 'Content-Type: application/json' \
-  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY",
-                    "https://www.lexpress.fr/…-RQOLMEM5NZE3BNTWPJEEGC5B5Y"]}' \
-  | python3 afficher-les-liens.py
+```json
+{
+    "links": [
+        {
+            "url": "https://www.lexpress.fr/politique/affaire-bardella-…",
+            "arc_id": "ULRPQWYZ5JCKTBM3LE7MJBVNAQ",
+            "token": "d30067cd211a4cdbb59c8ddc7c5ceeaf",
+            "link": "https://articles.lexpress.fr/a/d30067cd211a4cdbb59c8ddc7c5ceeaf",
+            "expires_at": "2026-10-09T12:57:49.699+00:00",
+            "content": "full",
+            "source": "arc",
+            "state": "created"
+        }
+    ],
+    "rejected": [],
+    "client": "test"
+}
 ```
 
-```
-────────────────────────────────────────────────────────────────────────
-  2 lien(s) — demandés par « newsletter-quotidienne »
-────────────────────────────────────────────────────────────────────────
+**`link`** est l'adresse à diffuser. **`url`** est l'article d'origine, toujours derrière son mur.
 
-https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929
-   article complet
-   valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
-   article : https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-…
+### Dans le navigateur : un tableau
 
-https://articles.lexpress.fr/a/ea460a275f6d41149c01095eb5693111
-   article complet
-   valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
-   article : https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-…
-```
+Pour plusieurs liens d'un coup, un tableau se lit mieux qu'une liste imbriquée.
 
-Le lien à diffuser est la **première ligne de chaque bloc**. C'est la seule qu'on copie.
+1. Copier la réponse entière, telle qu'elle apparaît dans le terminal.
+2. Ouvrir n'importe quelle page dans le navigateur, puis la **console** : `Cmd ⌥ J` sur Chrome
+   (macOS), `Ctrl ⇧ J` sur Windows, ou `F12` puis l'onglet *Console*.
+3. Taper la ligne ci-dessous, **sélectionner `COLLEZ_ICI` et coller la réponse par-dessus**, puis
+   `Entrée`.
 
-### Ce qu'il faut pour que le raccourci marche
-
-Télécharger [`afficher-les-liens.py`](afficher-les-liens.py) et le placer dans le dossier d'où l'on
-lance la commande. Rien d'autre : `python3` est livré avec macOS et avec Linux, et le script n'a aucune
-dépendance.
-
-Il **n'appelle rien** : il lit ce que curl lui passe, l'affiche, et s'arrête. Ni réseau, ni jeton. On
-peut le relire en entier, il fait soixante lignes.
-
-**`--silent` n'est pas décoratif.** Sans lui, curl écrit sa jauge de progression — des pourcentages et
-des colonnes de débit — juste au-dessus du résultat, et le lien s'y perd.
-
-### Entre les deux : le JSON mis en page
-
-```sh
-curl --silent … | python3 -m json.tool
+```js
+console.table(JSON.parse(`COLLEZ_ICI`).links)
 ```
 
-Rien à télécharger, mais ça reste du JSON : indenté et lisible pour qui en a l'habitude, opaque pour
-les autres.
+Un tableau s'affiche, une ligne par article, avec `link`, `expires_at`, `content` et `state` en
+colonnes. Les accents graves autour de `COLLEZ_ICI` ne sont pas décoratifs : la réponse contient des
+guillemets droits, et seuls les accents graves les laissent passer.
+
+**Chrome bloque le collage dans la console la première fois** et demande d'écrire `allow pasting` puis
+`Entrée`. C'est une protection, elle ne se présente qu'une fois par navigateur.
+
+Rien n'est installé, et **rien ne sort de votre machine** : la console exécute le code chez vous.
+
+> **À éviter : les sites de mise en forme JSON en ligne.** Y coller la réponse envoie vos liens sur le
+> serveur de quelqu'un d'autre. Les deux méthodes ci-dessus ne demandent pas plus d'effort.
 
 ### « J'ai demandé 1 jour et la réponse dit un mois »
 
 C'est normal, et c'est voulu. **On ne raccourcit jamais un lien déjà diffusé.** Si cet article avait
 déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec cette promesse : le ramener
-à demain la trahirait. La réponse l'annonce avec `lien existant, déjà valable plus longtemps que
-demandé`.
+à demain la trahirait. La réponse l'annonce avec `"state": "unchanged"`.
 
 ## Règles importantes pour les intégrateurs
 
