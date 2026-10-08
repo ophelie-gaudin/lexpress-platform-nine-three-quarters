@@ -279,6 +279,16 @@ const PAGE = `<html><head>
   // 009 : ce qui appartient à l'envoi ne part plus sur le lien.
   check(!/p_channel/.test(b) && !/p_campaign\b/.test(b),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : la fonction n’envoie plus ni canal ni campagne — le lien est commun à tous ses destinataires, lui en coller une attribuait toutes les lectures à la dernière déclarée');
+
+  // UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
+  check(/clé\(s\) non reconnue\(s\)/.test(b) && /accepted_keys/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une clé inconnue reçoit un 400 qui la NOMME — ignorée en silence, un appelant croirait attribuer ses liens, ou aurait mal tapé `expires_in_days` et perdrait quinze jours sans un mot');
+  const connues = (b.match(/const CONNUES = \[([^\]]*)\]/) || [])[1] || '';
+  check(/'urls'/.test(connues) && /'expires_in_days'/.test(connues) && /'fake_body'/.test(connues)
+        && !/'channel'/.test(connues) && !/'campaign'/.test(connues),
+    'et la liste des clés acceptées est close : urls, expires_in_days, fake_body — ni channel ni campaign');
+  check(/channel.*campaign.*n'existent plus|n'existent plus/.test(b),
+    'le refus dit où mettre l’attribution, au lieu de laisser l’appelant deviner');
 }
 
 

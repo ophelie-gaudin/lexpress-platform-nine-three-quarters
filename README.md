@@ -1,4 +1,4 @@
-# L’Express - Platform 9 3/4
+# L’Express - Platform 9¾
 
 **Offrir un article payant de L’Express à qui vous voulez, pour le temps que vous voulez.**
 
@@ -73,7 +73,9 @@ La réponse nomme le service reconnu dans son champ `client`. C’est le moyen l
 }
 ```
 
-`urls` est obligatoire ; la durée vaut 15 jours par défaut. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
+`urls` est obligatoire ; la durée vaut 15 jours par défaut. **Seules `urls`, `expires_in_days` et
+`fake_body` sont acceptées** : toute autre clé reçoit un `400` qui la nomme, plutôt qu'un silence qui
+laisserait croire qu'elle a servi. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
 
 La réponse contient deux listes :
 
@@ -154,7 +156,7 @@ Diffuser la valeur de **`link`** pour chaque article, et non l’URL originale `
 | HTTP | Sens |
 | --- | --- |
 | 401 | Jeton absent, inconnu ou révoqué — sans distinction, volontairement |
-| 400 | JSON illisible ou aucune URL exploitable |
+| 400 | JSON illisible, clé non reconnue, ou aucune URL exploitable |
 | 405 | Méthode autre que POST/OPTIONS |
 | 500 | Échec de mise en cache ou de création en base |
 | 502 | Aucun article exploitable après chargement |
@@ -254,26 +256,37 @@ Service existant :
 
 ### Créer un jeton (administration)
 
-Depuis une session SQL autorisée sur le projet Supabase. Le jeton en clair ne transite jamais par la base — on ne lui donne que son empreinte, exactement comme pour un mot de passe.
+**Ce n'est pas la base qui engendre le jeton.** Elle n'en voit jamais la valeur : on la fabrique sur sa
+propre machine, et on ne confie à PostgreSQL que son empreinte SHA-256 — exactement comme pour un mot
+de passe. `create_api_client` n'invente donc rien : elle **enregistre** un jeton déjà né ailleurs.
+
+Trois gestes, dans cet ordre.
+
+**1. Engendrer le jeton.** Sur votre machine, jamais dans le navigateur Supabase.
 
 ```sh
-# 1. Engendrer le jeton sur sa propre machine. 64 caractères hexadécimaux.
-JETON=$(openssl rand -hex 32)
-
-# 2. Calculer son empreinte. C'est ELLE qu'on envoie à la base.
+JETON=$(openssl rand -hex 32)          # 64 caractères hexadécimaux
 printf '%s' "$JETON" | shasum -a 256 | cut -d' ' -f1
-
-# 3. Transmettre $JETON au service appelant par un canal sûr, puis l'oublier.
 ```
 
+La seconde ligne affiche l'empreinte. C'est **elle** qu'on copie, pas `$JETON`.
+
+**2. Enregistrer l'empreinte en base.** Depuis une session SQL autorisée sur le projet Supabase.
+
 ```sql
--- Avec l'empreinte obtenue à l'étape 2, jamais avec le jeton.
 SELECT public.create_api_client(
-  'newsletter-quotidienne',                                             -- nom du service
-  '3b8c…l empreinte sha256 en minuscules, 64 caracteres hexadecimaux…',
+  'newsletter-quotidienne',                                             -- nom du service appelant
+  'collez ici l''empreinte de l''étape 1, 64 caractères hexadécimaux',  -- JAMAIS le jeton lui-même
   'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'              -- note libre, facultative
 );
 ```
+
+La fonction rend l'identifiant du client créé. Si vous y collez le jeton au lieu de son empreinte, la
+contrainte de forme le refusera — 64 caractères hexadécimaux minuscules sont exigés — mais rien ne vous
+dira que vous avez confondu les deux. Vérifiez d'où vient ce que vous collez.
+
+**3. Transmettre `$JETON` au service appelant** par un canal sûr, puis l'oublier. Il n'est plus
+retrouvable : la base n'en garde que l'empreinte, et c'est tout l'intérêt.
 
 ### Révoquer
 

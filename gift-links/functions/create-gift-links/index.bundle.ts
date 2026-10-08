@@ -303,6 +303,28 @@ Deno.serve(async (req) => {
   let corps: Record<string, unknown>;
   try { corps = await req.json(); } catch { return json({ error: 'corps JSON illisible' }, 400); }
 
+  // ── UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
+  //
+  // `channel` et `campaign` ont été acceptées puis ignorées en silence du 8 octobre au soir. Un appelant
+  // qui les envoyait croyait attribuer ses liens ; il ne faisait rien, et rien ne le lui disait. Une
+  // faute de frappe sur `expires_in_days` se payait de la même façon : quinze jours au lieu de trente,
+  // sans un mot.
+  //
+  // L'ATTRIBUTION NE SE MET PAS ICI. Elle voyage dans la query string du lien qu'on diffuse —
+  // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — parce qu'un lien est COMMUN à tous ses
+  // destinataires et qu'une campagne posée sur lui écraserait celle de tous les autres.
+  const CONNUES = ['urls', 'expires_in_days', 'fake_body'];
+  const inconnues = Object.keys(corps).filter((c) => !CONNUES.includes(c));
+  if (inconnues.length > 0) {
+    return json({
+      error: `clé(s) non reconnue(s) : ${inconnues.join(', ')}`,
+      accepted_keys: CONNUES,
+      hint: inconnues.some((c) => c === 'channel' || c === 'campaign')
+        ? "`channel` et `campaign` n'existent plus. Un lien est commun à tous ses destinataires : posez l'attribution dans la query string du lien diffusé (?s=…&at_medium=…&at_campaign=…&at_campaign_group=…), elle y est enregistrée lecture par lecture."
+        : undefined,
+    }, 400);
+  }
+
   const { retenus, rejets } = trierUrls(corps.urls as string[]);
   if (retenus.length === 0) {
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "L’Express - Platform 9 3/4 — service interne de liens d’articles offerts",
+  "description": "L’Express - Platform 9¾ — service interne de liens d’articles offerts",
   "engines": {
     "node": ">=22"
   },
