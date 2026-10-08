@@ -19,6 +19,13 @@ ETATS = {
     "withdrawn": "ARTICLE RETIRÉ — ce lien ne peut pas être rouvert",
 }
 
+# UN TRAIT, ET DE L'AIR AUTOUR. Sans cela le résultat se confond avec ce que curl a écrit juste avant —
+# sa jauge de progression, les en-têtes — et le lien à copier se perd dans le bruit.
+TRAIT = "─" * 72
+
+def titre(texte):
+    print(f"\n{TRAIT}\n  {texte}\n{TRAIT}\n")
+
 def jour(iso):
     a, m, j = iso[:10].split("-")
     return f"{j}/{m}/{a}"
@@ -32,7 +39,7 @@ def main():
 
     # UN REFUS GLOBAL. Jeton absent ou inconnu, corps mal formé, aucune URL exploitable.
     if "error" in r:
-        print("REFUSÉ :", r["error"])
+        titre(f'REFUSÉ — {r["error"]}')
         if r.get("accepted_keys"):
             print("Clés acceptées :", ", ".join(r["accepted_keys"]))
         if r.get("hint"):
@@ -42,10 +49,11 @@ def main():
         return 1
 
     liens = r.get("links", [])
-    print(f'{len(liens)} lien(s) — demandés par « {r.get("client", "?")} »')
+    titre(f'{len(liens)} lien(s) — demandés par « {r.get("client", "?")} »')
 
-    for l in liens:
-        print()
+    for i, l in enumerate(liens):
+        if i:
+            print()
         print(l["link"])
         # LE CONTENU D'ABORD : c'est la seule chose qui peut décevoir le destinataire.
         contenu = ("article complet" if l.get("content") == "full"
@@ -57,7 +65,7 @@ def main():
     # LES REFUS NE SONT JAMAIS TUS. Un appelant qui demande trois liens doit savoir qu'il n'en a que deux.
     rejets = r.get("rejected", [])
     if rejets:
-        print(f'\n{len(rejets)} article(s) refusé(s) :')
+        titre(f'{len(rejets)} article(s) refusé(s)')
         for x in rejets:
             print("  -", x.get("url"))
             print("    →", x.get("erreur"))

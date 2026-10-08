@@ -47,7 +47,7 @@ Le jeton est montré **une seule fois**, à sa création. Il n’est jamais retr
 Le passer dans l’en-tête `x-gift-service-token` à chaque appel. La fonction en calcule l’empreinte et la compare à la base ; le jeton en clair ne quitte jamais l’appelant et la fonction.
 
 ```sh
-curl --request POST \
+curl --silent --request POST \
   'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
   --header "x-gift-service-token: ${GIFT_TOKEN}" \
   --header 'Content-Type: application/json' \
@@ -99,7 +99,7 @@ Avant l’appel :
 Renseigner `GIFT_TOKEN` dans l’environnement de l’appelant serveur avec le jeton de service obtenu, puis envoyer :
 
 ```sh
-curl --request POST \
+curl --silent --request POST \
   'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
   --header "x-gift-service-token: ${GIFT_TOKEN}" \
   --header 'Content-Type: application/json' \
@@ -173,18 +173,26 @@ installer** : `python3` est livré avec macOS et avec Linux.
 Télécharger [`afficher-les-liens.py`](afficher-les-liens.py) à côté de soi, puis :
 
 ```sh
-curl … | python3 afficher-les-liens.py
+curl --silent … | python3 afficher-les-liens.py
 ```
 
+**`--silent` n'est pas décoratif** : sans lui, curl écrit sa jauge de progression dans le terminal, et
+le lien à copier se perd au milieu de pourcentages.
+
 ```
-1 lien(s) — demandés par « newsletter-quotidienne »
+────────────────────────────────────────────────────────────────────────
+  1 lien(s) — demandés par « newsletter-quotidienne »
+────────────────────────────────────────────────────────────────────────
 
 https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929
    article complet
    valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
    article : https://www.lexpress.fr/secret-defense/la-dgse-investit-…
 
-1 article(s) refusé(s) :
+────────────────────────────────────────────────────────────────────────
+  1 article(s) refusé(s)
+────────────────────────────────────────────────────────────────────────
+
   - https://www.lexpress.fr/politique/un-vieil-article_1302698.html
     → ancien format sans identifiant Arc : /politique/un-vieil-article_1302698.html
 ```
@@ -195,7 +203,7 @@ jeton, aucune dépendance.
 ### Ou simplement la réponse brute, mise en page
 
 ```sh
-curl … | python3 -m json.tool
+curl --silent … | python3 -m json.tool
 ```
 
 Rien à télécharger, mais c'est du JSON indenté : lisible pour qui en a l'habitude.
