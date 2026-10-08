@@ -1,37 +1,30 @@
 {
- "_id": "4S7V6GJJLZCNDESZNFSRXUHFKY",
+ "_id": "DEMOFIXTURE000000000000AAA",
  "canonical_website": "lexpress",
  "content_elements": [
   {
-   "content": "A 46 ans, Maxime Carmignac copilote avec son père cette référence de la finance européenne qui gère près de 45 milliards d’euros d'actifs. Elle interviendra en qualité de grand témoin <a href=\"https://www.lexpress.fr/evenements/colloque-entreprises-familiales/\" target=\"_self\" rel=\"\" title=\"https://www.lexpress.fr/evenements/colloque-entreprises-familiales/\">lors du colloque organisé par L'Express</a> ce jeudi 24 septembre à Paris, au théâtre Marigny : \"Entreprises familiales : le maillon clé de notre souveraineté\".",
-   "type": "text"
+   "type": "text",
+   "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat."
   },
   {
-   "content": "<b>L'Express : Vous dites être entrée deux fois chez Carmignac, la première par devoir, la seconde par choix.</b>",
-   "type": "text"
+   "type": "text",
+   "content": "<b>Question de démonstration, en gras comme dans une interview réelle.</b>"
   },
   {
+   "type": "text",
+   "content": "Réponse fictive contenant <a href=\"https://www.lexpress.fr/\">un lien</a>, parce que le corps réel en porte et que la page doit savoir les rendre. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat."
+  },
+  {
+   "type": "link_list",
+   "subtype": "a-lire-aussi",
+   "title": "À lire aussi",
    "items": [
     {
-     "_id": "26ZWVOTBBNEKDMPBOBZVROR3RM",
-     "additional_properties": {
-      "nofollow": false,
-      "openInNewTab": false,
-      "sponsored": false
-     },
-     "content": "Pourquoi les dynasties patronales sont le pilier de notre souveraineté",
-     "description": {
-      "_id": "E3WDP5VGUBGMXBH5HST5JWOS6Y",
-      "content": "",
-      "type": "text"
-     },
      "type": "interstitial_link",
-     "url": "https://www.lexpress.fr/economie/entreprises/pourquoi-les-dynasties-patronales-sont-le-pilier-de-notre-souverainete-MVEREBWCCVBA3NSVNEKB7OY7UA/"
+     "url": "/economie/entreprises/autre-fixture-DEMOFIXTURE000000000000AAA/",
+     "content": "Un bloc « à lire aussi », que le corps doit écarter"
     }
-   ],
-   "subtype": "read-more",
-   "title": "",
-   "type": "link_list"
+   ]
   }
  ],
  "content_restrictions": {
@@ -41,8 +34,8 @@
  "credits": {
   "by": [
    {
-    "_id": "bouillin-arnaud",
-    "name": "Arnaud Bouillin",
+    "_id": "doe-jane",
+    "name": "Jane Doe",
     "type": "author"
    }
   ]
@@ -53,7 +46,7 @@
  "display_date": "2026-09-24T09:00:00Z",
  "first_publish_date": "2026-09-24T09:00:00Z",
  "headlines": {
-  "basic": "Maxime Carmignac : \"La première fois que je suis entrée dans l'entreprise de mon père, on m'a vue comme une espionne\"",
+  "basic": "Fixture de démonstration — structure réelle, contenu fictif",
   "meta_title": "",
   "mobile": "",
   "native": "",
@@ -66,14 +59,14 @@
  "last_updated_date": "2026-09-24T09:00:34.121Z",
  "promo_items": {
   "basic": {
-   "_id": "EW33H5DOJNBK7E33W25RZWFB5M",
-   "alt_text": "Maxime Carmignac",
-   "caption": "\"On joue notre peau dans nos choix d'investissement, au même titre que nos clients\", insiste la directrice générale de Carmignac.",
+   "_id": "DEMOFIXTUREIMAGE0000000AAA",
+   "alt_text": "Image de démonstration",
+   "caption": "Légende fictive, posée pour éprouver le chemin de l'image.",
    "created_date": "2026-09-17T09:41:26Z",
    "credits": {
     "affiliation": [
      {
-      "name": "DR",
+      "name": "Fixture",
       "type": "author"
      }
     ]
@@ -81,15 +74,15 @@
    "height": 4724,
    "image_type": "photograph",
    "last_updated_date": "2026-09-17T09:41:26Z",
-   "subtitle": "\"On joue notre peau dans nos choix d'investissement, au même titre que nos clients\", insiste la directrice générale de Carmignac.",
+   "subtitle": "Légende fictive, posée pour éprouver le chemin de l'image.",
    "type": "image",
-   "url": "https://cloudfront-eu-central-1.images.arcpublishing.com/lexpress/EW33H5DOJNBK7E33W25RZWFB5M.jpeg",
+   "url": "https://cloudfront-eu-central-1.images.arcpublishing.com/lexpress/DEMOFIXTUREIMAGE0000000AAA.jpeg",
    "width": 3149,
    "syndication": {
     "search": true
    },
    "country_name": "France",
-   "creditIPTC": "DR",
+   "creditIPTC": "Fixture",
    "focal_point": {
     "x": 1340,
     "y": 846
@@ -100,10 +93,10 @@
     "config": {
      "duration": "268",
      "id": "-uW1Wd3moX",
-     "mp3": "https://static.lexpress.fr/etx/prod/-uW1Wd3moX.mp3"
+     "mp3": "https://static.lexpress.fr/etx/prod/fixture.mp3"
     },
     "id": "1790240430_-uW1Wd3moX",
-    "url": "https://static.lexpress.fr/etx/prod/-uW1Wd3moX.mp3"
+    "url": "https://static.lexpress.fr/etx/prod/fixture.mp3"
    },
    "subtype": "etx",
    "type": "custom_embed"
@@ -111,7 +104,7 @@
  },
  "publish_date": "2026-09-24T09:00:00Z",
  "subheadlines": {
-  "basic": "La directrice générale de Carmignac incarne la relève dans cette société de gestion fondée par son père Edouard en 1989."
+  "basic": "Ce document reproduit la forme d'une réponse Arc XP. Aucune phrase n'en est tirée d'un article de L'Express."
  },
  "subtype": "interview",
  "taxonomy": {
@@ -151,7 +144,7 @@
   ]
  },
  "type": "story",
- "canonical_url": "/economie/entreprises/maxime-carmignac-la-premiere-fois-que-je-suis-entree-dans-lentreprise-de-mon-pere-on-ma-vue-comme-4S7V6GJJLZCNDESZNFSRXUHFKY/",
+ "canonical_url": "/economie/entreprises/fixture-de-demonstration-contenu-fictif-DEMOFIXTURE000000000000AAA/",
  "website": "lexpress",
- "website_url": "/economie/entreprises/maxime-carmignac-la-premiere-fois-que-je-suis-entree-dans-lentreprise-de-mon-pere-on-ma-vue-comme-4S7V6GJJLZCNDESZNFSRXUHFKY/"
+ "website_url": "/economie/entreprises/fixture-de-demonstration-contenu-fictif-DEMOFIXTURE000000000000AAA/"
 }

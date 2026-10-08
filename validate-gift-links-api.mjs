@@ -132,18 +132,23 @@ const PAGE = `<html><head>
   check(typeof mort.erreur === 'string', 'page injoignable : une erreur nommée, pas un article vide');
 }
 
-// ── LE VRAI DOCUMENT ARC. Relevé le 2 oct. 2026 sur api.lexpress.arcpublishing.com, structure réelle.
+// ── LA FORME RÉELLE D'UN DOCUMENT ARC. Relevée le 2 oct. 2026 sur api.lexpress.arcpublishing.com.
 //
 // Écrit d'après la documentation, le lecteur n'avait jamais vu de réponse. Ce cas le confronte à la
 // vraie forme : canonical_url RELATIVE, description.basic VIDE (le chapeau est dans subheadlines),
 // content_elements mêlant text et link_list, et du HTML DANS le corps.
+//
+// LE CONTENU EST FICTIF, LA STRUCTURE NE L'EST PAS (8 oct. 2026). La fixture portait un vrai article
+// de L'Express — 600 caractères de texte payant, son titre, sa signature, sa légende photo. Un dépôt
+// qu'on partage n'a pas à publier ce que le service existe pour encadrer. Titre, signature, image et
+// corps sont inventés ; chaque particularité que ces cas éprouvent est conservée telle quelle.
 {
   const doc = JSON.parse(readFileSync('gift-links/fixtures/arc-article-reel.json', 'utf8'));
   const c = depuisArc(doc, 'https://repli');
-  check(c.title.startsWith('Maxime Carmignac'), 'le titre vient de headlines.basic');
-  check(c.standfirst.startsWith('La directrice générale'),
+  check(c.title.startsWith('Fixture de démonstration'), 'le titre vient de headlines.basic');
+  check(c.standfirst.startsWith('Ce document reproduit'),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le chapeau vient de subheadlines — description.basic est VIDE sur les articles réels, s’y fier donnerait un aperçu sans chapeau');
-  check(c.author === 'Arnaud Bouillin', 'la signature vient de credits.by[].name');
+  check(c.author === 'Jane Doe', 'la signature vient de credits.by[].name');
   check(c.section === 'Entreprises', 'la rubrique vient de taxonomy.primary_section');
   check(c.published_at === '2026-09-24T09:00:00Z', 'la date de publication est reprise telle quelle');
   check(c.canonical_url === 'https://www.lexpress.fr' + doc.canonical_url,
@@ -152,6 +157,13 @@ const PAGE = `<html><head>
   check(!/link_list/.test(c.body) && c.body.length > 200, 'seuls les éléments de texte forment le corps ; les blocs « à lire aussi » sont écartés');
   check(/<a href=|<b>/.test(c.body),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le corps contient du HTML — affiché tel quel, le lecteur verrait les balises ; injecté sans filtre, n’importe quel contenu passerait');
+
+  // ET LA FIXTURE NE REPUBLIE RIEN. Le dépôt se partage ; il ne doit pas contenir l'article payant que
+  // le service sert à encadrer.
+  const brut = readFileSync('gift-links/fixtures/arc-article-reel.json', 'utf8');
+  check(!/Carmignac|Bouillin|espionne/i.test(brut),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : aucune phrase d’un vrai article dans la fixture — un dépôt qu’on partage ne republie pas le contenu payant qu’il protège');
+  check(/Lorem ipsum/.test(brut), 'le corps est du texte de remplissage, reconnaissable au premier coup d’œil');
 }
 
 // ── LE CORPS DE DÉMONSTRATION. Sur demande explicite, et reconnaissable au premier coup d'œil.
