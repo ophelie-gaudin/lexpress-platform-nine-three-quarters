@@ -1,78 +1,34 @@
 # L’Express - Platform 9 3/4
 
-Service interne qui transforme des URLs L’Express en liens temporaires donnant accès à une copie du contenu premium. Un passage dérobé vers un article payant, ouvert à qui reçoit le lien et fermé à la date dite. Un autre canal peut appeler ce service sans dépendre de l’agent WhatsApp.
+**Offrir un article payant de L’Express à qui vous voulez, pour le temps que vous voulez.**
 
-Ce dépôt est une extraction autonome du backend et de ses tests. La page de lecture est hébergée dans Lovable ; ses sources ne sont pas incluses. Partager ce dépôt en privé avec les intervenants techniques de L’Express : la fixture Arc contient un exemple réel de contenu éditorial.
+Vous donnez l’URL d’un article, le service rend un lien. Qui ouvre ce lien lit l’article en entier,
+gratuitement, jusqu’à la date de fin — sans compte, sans abonnement, sans mur. Un passage dérobé vers
+un article payant, ouvert à qui reçoit le lien et fermé à la date dite.
 
-## Démarrage local
+N’importe quel service peut l’appeler : l’agent WhatsApp le fait déjà, une newsletter ou une campagne
+le peuvent tout autant.
 
-Prérequis : Node.js 22 ou supérieur et npm. Depuis la racine du dépôt :
+## Deux lecteurs, deux parcours
 
-```sh
-npm ci
-npm test
-npm run build
-```
-
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 88 vérifications du schéma et 91 vérifications du traitement des articles.
-
-Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
-
-## Architecture et périmètre
-
-```text
-Canal serveur (WhatsApp, email, outil interne…)
-  → POST /functions/v1/create-gift-links, secret serveur
-  → Arc XP : chargement du contenu
-  → Supabase dédié : cache articles + liens + ouvertures
-  → URL /a/<token>
-  → page Lovable : RPC get_gift_article avec clé publique
-```
-
-Il existe une seule page dynamique de lecture, pas une page à générer par article. La création d’un lien ne nécessite pas de publication Lovable.
-
-| Fichier | Rôle |
+| Vous voulez… | Allez à |
 | --- | --- |
-| `gift-links/supabase/001-schema.sql` | Tables, droits et fonctions initiales |
-| `gift-links/supabase/002-author.sql` | Signature et campagne rendues au frontend |
-| `gift-links/supabase/003-un-lien-par-article.sql` | Token stable et prolongation |
-| `gift-links/supabase/004-jeu-d-essai.sql` | Quatre articles fictifs pour vérifier la page |
-| `gift-links/functions/_shared/` | Lecture Arc, extraction de l’identifiant, aperçu public |
-| `gift-links/functions/create-gift-links/index.ts` | Point d’entrée HTTP |
-| `build-gift-links-function.mjs` | Assemblage de la fonction déployable |
-| `validate-gift-links-*.mjs` | Tests locaux |
-| `docs/frontend.md` | Contrat à respecter par la page Lovable |
+| **offrir des articles** — fabriquer des liens et les diffuser dans vos messages, vos newsletters, vos campagnes | **Partie I**, ci-dessous |
+| **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
-## État connu au 8 octobre 2026
+La Partie I se lit en dix minutes et ne demande aucun accès technique : un jeton, une requête, un lien à
+diffuser. La Partie II suppose les accès au projet Supabase et à la page de lecture.
 
-Schéma appliqué, fonction déployée, page publiée, lecture de corps Arc réels vérifiée en ligne. Les cinq statuts de lecture et le cas d’erreur technique avec réessai sont vérifiés. L’extraction de ce dépôt ne constitue pas une nouvelle vérification de la production ; ces faits viennent du journal du projet source.
+Le code est là pour qui veut regarder : le SQL dans `gift-links/supabase/`, la fonction d’API dans
+`gift-links/functions/`, et les tests à la racine. Ils tournent sans réseau ni secret — `npm ci && npm
+test` suffit à les voir passer.
 
-Depuis le 5 octobre : les images et les citations du corps sont rendues, chaque service appelant a son propre jeton, chaque lien sait qui l’a créé et qui l’a prolongé, et le schéma est entièrement en anglais. Le secret partagé unique a été supprimé le 7 octobre au soir, après que la bascule du job nocturne a été prouvée.
+# Partie I — Utiliser l’outil
 
-Restent à faire : archivage des données, intégration Piano et raccordement des liens offerts dans la chaîne WhatsApp de production. Ce raccordement est présent en test seulement : la production envoie encore l’URL nue du site, c’est-à-dire le mur d’abonnement que le lien offert existe pour éviter. Les compteurs d’ouverture en base existent déjà.
-
-## Accès et configuration
-
-Pour reprendre le service existant, obtenir les accès au projet Supabase dédié, au projet Lovable et au jeton de lecture Arc auprès de la personne responsable du service. Ophélie est le point de contact indiqué dans le projet source. Le lien et l’identifiant du projet Lovable restent à transmettre lors de la passation.
-
-Service existant :
-
-- Page : `https://articles.lexpress.fr/a/<token>`.
-- Supabase : projet `L’Express - Article Premium Offert`, référence `ovifzentveeehhtlnugk`.
-- API : `https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links`.
-
-| Variable du runtime | Usage |
-| --- | --- |
-| `SUPABASE_URL` | URL du projet backend |
-| `SUPABASE_SERVICE_ROLE_KEY` | Accès serveur à la base ; jamais dans le frontend |
-| `ARC_BASE` | URL de l’API Arc, par exemple `https://api.lexpress.arcpublishing.com` |
-| `ARC_TOKEN` | Jeton de lecture Arc, côté serveur |
-| `ARC_SITE` | Site Arc, `lexpress` par défaut |
-| `GIFT_LINK_BASE` | Origine des URLs rendues, `https://articles.lexpress.fr` par défaut |
-
-`.env.example` inventorie ces variables ; la fonction lit les variables du runtime Supabase, pas un fichier local automatiquement. La page Lovable reçoit uniquement l’URL Supabase et la clé publique du projet — celle de rôle `anon`, faite pour être publiée.
-
-**Aucune variable d’environnement ne porte plus de secret d’appel.** L’authentification se fait par un jeton par service, stocké en base sous forme d’empreinte. Voir la section suivante.
+Vous avez un article payant de lexpress.fr, et vous voulez qu’une personne précise puisse le lire en
+entier, gratuitement, pendant un temps limité. Le service transforme l’URL de l’article en un lien qui
+ouvre une copie lisible. Trois gestes : demander un jeton une fois, appeler l’API, diffuser le lien
+qu’elle rend.
 
 ## Obtenir un jeton de service
 
@@ -80,32 +36,9 @@ Service existant :
 
 ### Demander un accès
 
-Écrire à la personne responsable du service — Ophélie est le point de contact indiqué dans le projet source — en donnant **le nom du service appelant**, pas celui d’une personne. Ce nom apparaîtra dans chaque réponse de l’API et dans le journal d’attribution des liens : `newsletter-quotidienne` se lit mieux que `jean`, et survit à un départ.
+Écrire à **Ophélie Gaudin**, responsable du service, en donnant **le nom du service appelant** plutôt que le vôtre. Ce nom apparaîtra dans chaque réponse de l’API et dans le journal d’attribution des liens : `newsletter-quotidienne` se lit mieux que `jean`, et survit à un départ.
 
 Le jeton est montré **une seule fois**, à sa création. Il n’est jamais retrouvable ensuite : la base n’en garde que l’empreinte SHA-256. Le ranger tout de suite dans le gestionnaire de secrets du service appelant.
-
-### Créer un jeton (administration)
-
-Depuis une session SQL autorisée sur le projet Supabase. Le jeton en clair ne transite jamais par la base — on ne lui donne que son empreinte, exactement comme pour un mot de passe.
-
-```sh
-# 1. Engendrer le jeton sur sa propre machine. 64 caractères hexadécimaux.
-JETON=$(openssl rand -hex 32)
-
-# 2. Calculer son empreinte. C'est ELLE qu'on envoie à la base.
-printf '%s' "$JETON" | shasum -a 256 | cut -d' ' -f1
-
-# 3. Transmettre $JETON au service appelant par un canal sûr, puis l'oublier.
-```
-
-```sql
--- Avec l'empreinte obtenue à l'étape 2, jamais avec le jeton.
-SELECT public.create_api_client(
-  'newsletter-quotidienne',                                             -- nom du service
-  '3b8c…l empreinte sha256 en minuscules, 64 caracteres hexadecimaux…',
-  'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'              -- note libre, facultative
-);
-```
 
 ### Utiliser le jeton
 
@@ -126,28 +59,6 @@ La réponse nomme le service reconnu dans son champ `client`. C’est le moyen l
 ```
 
 **Un jeton absent, inconnu ou révoqué reçoit un `401` nu**, sans motif. La base sait distinguer les trois cas et les journalise ; l’appelant ne l’apprend pas. Le lui dire renseignerait qui cherche à deviner.
-
-### Révoquer
-
-```sql
-SELECT public.revoke_api_client('newsletter-quotidienne');  -- rend true, ou false si déjà révoqué
-```
-
-La ligne **reste en base** : on garde la trace de ce que ce service a créé, et les liens qu’il a fabriqués continuent de fonctionner. Révoquer ferme la porte, cela n’efface pas l’histoire. Les autres services ne sont pas affectés — c’est tout l’intérêt d’un jeton par appelant.
-
-### Savoir qui a fait quoi
-
-Chaque lien porte le service qui l’a créé et le dernier qui en a repoussé la date de fin.
-
-```sql
-SELECT title, created_by, updated_by, updated_at, expires_at, opens
-FROM public.gift_links_by_client
-ORDER BY created_at DESC;
-```
-
-`created_by` ne change plus jamais. `updated_by` ne bouge qu’à une **vraie** modification : redemander un lien déjà valable plus longtemps ne fait pas de vous le dernier intervenant, sinon la colonne dirait « dernier à avoir demandé » au lieu de « dernier à avoir modifié ». Les liens créés avant le 7 octobre 2026 portent `NULL` : l’historique commence là, il ne se reconstruit pas.
-
-Les compteurs par service vivent dans `api_clients` : `calls`, `links_created`, `last_used_at`. Aucun plafond n’est imposé aujourd’hui, mais les chiffres sont là le jour où il en faudra un.
 
 ## Contrat de création
 
@@ -258,6 +169,152 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 - Les tables sont fermées aux rôles publics. La lecture passe uniquement par `get_gift_article` ; la création requiert les droits serveur.
 - `fake_body: true` est réservé aux essais et produit un texte clairement marqué démonstration quand aucun vrai corps n’est disponible.
 
+**Vous ne voyez pas vos liens en base** : la lecture des tables demande les accès du service. Pour
+savoir combien de fois vos liens ont été lus, ou lesquels vous avez créés, demandez-le à la personne
+responsable du service — les deux vues existent, elles sont décrites en Partie II.
+
+# Partie II — Reprendre le service
+
+Cette partie suppose les accès au projet Supabase, au projet Lovable qui héberge la page de lecture,
+et au jeton de lecture Arc. Elle n’est pas nécessaire pour créer des liens.
+
+## Démarrage local
+
+Prérequis : Node.js 22 ou supérieur et npm. Depuis la racine du dépôt :
+
+```sh
+npm ci
+npm test
+npm run build
+```
+
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 88 vérifications du schéma et 91 vérifications du traitement des articles.
+
+Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
+
+## Architecture et périmètre
+
+```text
+Canal serveur (WhatsApp, email, outil interne…)
+  → POST /functions/v1/create-gift-links, secret serveur
+  → Arc XP : chargement du contenu
+  → Supabase dédié : cache articles + liens + ouvertures
+  → URL /a/<token>
+  → page Lovable : RPC get_gift_article avec clé publique
+```
+
+Il existe une seule page dynamique de lecture, pas une page à générer par article. La création d’un lien ne nécessite pas de publication Lovable.
+
+| Fichier | Rôle |
+| --- | --- |
+| `gift-links/supabase/001-schema.sql` | Tables, droits et fonctions initiales |
+| `gift-links/supabase/002-author.sql` | Signature et campagne rendues au frontend |
+| `gift-links/supabase/003-un-lien-par-article.sql` | Token stable et prolongation |
+| `gift-links/supabase/004-jeu-d-essai.sql` | Quatre articles fictifs pour vérifier la page |
+| `gift-links/functions/_shared/` | Lecture Arc, extraction de l’identifiant, aperçu public |
+| `gift-links/functions/create-gift-links/index.ts` | Point d’entrée HTTP |
+| `build-gift-links-function.mjs` | Assemblage de la fonction déployable |
+| `validate-gift-links-*.mjs` | Tests locaux |
+| `docs/frontend.md` | Contrat à respecter par la page Lovable |
+
+## État connu au 8 octobre 2026
+
+Schéma appliqué, fonction déployée, page publiée, lecture de corps Arc réels vérifiée en ligne. Les cinq statuts de lecture et le cas d’erreur technique avec réessai sont vérifiés. L’extraction de ce dépôt ne constitue pas une nouvelle vérification de la production ; ces faits viennent du journal du projet source.
+
+Depuis le 5 octobre : les images et les citations du corps sont rendues, chaque service appelant a son propre jeton, chaque lien sait qui l’a créé et qui l’a prolongé, et le schéma est entièrement en anglais. Le secret partagé unique a été supprimé le 7 octobre au soir, après que la bascule du job nocturne a été prouvée.
+
+Restent à faire : archivage des données, intégration Piano et raccordement des liens offerts dans la chaîne WhatsApp de production. Ce raccordement est présent en test seulement : la production envoie encore l’URL nue du site, c’est-à-dire le mur d’abonnement que le lien offert existe pour éviter. Les compteurs d’ouverture en base existent déjà.
+
+## Accès et configuration
+
+Pour reprendre le service existant, obtenir les accès au projet Supabase dédié, au projet Lovable et au jeton de lecture Arc auprès de la personne responsable du service. Ophélie est le point de contact indiqué dans le projet source. Le lien et l’identifiant du projet Lovable restent à transmettre lors de la passation.
+
+Service existant :
+
+- Page : `https://articles.lexpress.fr/a/<token>`.
+- Supabase : projet `L’Express - Article Premium Offert`, référence `ovifzentveeehhtlnugk`.
+- API : `https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links`.
+
+| Variable du runtime | Usage |
+| --- | --- |
+| `SUPABASE_URL` | URL du projet backend |
+| `SUPABASE_SERVICE_ROLE_KEY` | Accès serveur à la base ; jamais dans le frontend |
+| `ARC_BASE` | URL de l’API Arc, par exemple `https://api.lexpress.arcpublishing.com` |
+| `ARC_TOKEN` | Jeton de lecture Arc, côté serveur |
+| `ARC_SITE` | Site Arc, `lexpress` par défaut |
+| `GIFT_LINK_BASE` | Origine des URLs rendues, `https://articles.lexpress.fr` par défaut |
+
+`.env.example` inventorie ces variables ; la fonction lit les variables du runtime Supabase, pas un fichier local automatiquement. La page Lovable reçoit uniquement l’URL Supabase et la clé publique du projet — celle de rôle `anon`, faite pour être publiée.
+
+**Aucune variable d’environnement ne porte plus de secret d’appel.** L’authentification se fait par un jeton par service, stocké en base sous forme d’empreinte. Voir la section suivante.
+
+## Administrer les jetons
+
+### Créer un jeton (administration)
+
+Depuis une session SQL autorisée sur le projet Supabase. Le jeton en clair ne transite jamais par la base — on ne lui donne que son empreinte, exactement comme pour un mot de passe.
+
+```sh
+# 1. Engendrer le jeton sur sa propre machine. 64 caractères hexadécimaux.
+JETON=$(openssl rand -hex 32)
+
+# 2. Calculer son empreinte. C'est ELLE qu'on envoie à la base.
+printf '%s' "$JETON" | shasum -a 256 | cut -d' ' -f1
+
+# 3. Transmettre $JETON au service appelant par un canal sûr, puis l'oublier.
+```
+
+```sql
+-- Avec l'empreinte obtenue à l'étape 2, jamais avec le jeton.
+SELECT public.create_api_client(
+  'newsletter-quotidienne',                                             -- nom du service
+  '3b8c…l empreinte sha256 en minuscules, 64 caracteres hexadecimaux…',
+  'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'              -- note libre, facultative
+);
+```
+
+### Révoquer
+
+```sql
+SELECT public.revoke_api_client('newsletter-quotidienne');  -- rend true, ou false si déjà révoqué
+```
+
+La ligne **reste en base** : on garde la trace de ce que ce service a créé, et les liens qu’il a fabriqués continuent de fonctionner. Révoquer ferme la porte, cela n’efface pas l’histoire. Les autres services ne sont pas affectés — c’est tout l’intérêt d’un jeton par appelant.
+
+### Savoir qui a fait quoi
+
+Chaque lien porte le service qui l’a créé et le dernier qui en a repoussé la date de fin.
+
+```sql
+SELECT title, created_by, updated_by, updated_at, expires_at, opens
+FROM public.gift_links_by_client
+ORDER BY created_at DESC;
+```
+
+`created_by` ne change plus jamais. `updated_by` ne bouge qu’à une **vraie** modification : redemander un lien déjà valable plus longtemps ne fait pas de vous le dernier intervenant, sinon la colonne dirait « dernier à avoir demandé » au lieu de « dernier à avoir modifié ». Les liens créés avant le 7 octobre 2026 portent `NULL` : l’historique commence là, il ne se reconstruit pas.
+
+Les compteurs par service vivent dans `api_clients` : `calls`, `links_created`, `last_used_at`. Aucun plafond n’est imposé aujourd’hui, mais les chiffres sont là le jour où il en faudra un.
+
+## Lire l’attribution
+
+Qui a fabriqué chaque lien, et qui en a repoussé la date :
+
+```sql
+SELECT title, created_by, updated_by, updated_at, expires_at, opens
+FROM public.gift_links_by_client ORDER BY created_at DESC;
+```
+
+Combien de lectures par campagne — une ligne par lecture, avec le segment que **ce** visiteur portait :
+
+```sql
+SELECT campaign_group, reads, sends, articles, last_read
+FROM public.gift_link_reads_by_campaign ORDER BY reads DESC;
+```
+
+`sends` compte les identifiants d’envoi distincts : un même lien diffusé à trois reprises donne trois
+envois, et des lectures attribuables à chacun. C’est ce que le champ `campaign` d’autrefois ne pouvait
+pas faire, étant commun au lien.
+
 ## Installer dans un autre environnement
 
 Utiliser un projet Supabase dédié. Appliquer **les dix fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
@@ -284,26 +341,6 @@ Configurer les variables serveur, exécuter les tests et générer le bundle. D�
 Brancher et publier la page Lovable conformément à [son contrat](docs/frontend.md). Pour un autre environnement, adapter l’origine de lecture via `GIFT_LINK_BASE`, la connexion Supabase du frontend et les paramètres du bouton d’abonnement.
 
 Après déploiement, vérifier séparément les droits publics, une création avec du contenu réel, les cinq états de lecture et une panne réseau avec réessai. Les tests locaux ne valident ni la configuration distante ni le frontend publié. Pour les tests externes, utiliser un environnement isolé, des articles fictifs et des envois simulés.
-
-## Lire l’attribution
-
-Qui a fabriqué chaque lien, et qui en a repoussé la date :
-
-```sql
-SELECT title, created_by, updated_by, updated_at, expires_at, opens
-FROM public.gift_links_by_client ORDER BY created_at DESC;
-```
-
-Combien de lectures par campagne — une ligne par lecture, avec le segment que **ce** visiteur portait :
-
-```sql
-SELECT campaign_group, reads, sends, articles, last_read
-FROM public.gift_link_reads_by_campaign ORDER BY reads DESC;
-```
-
-`sends` compte les identifiants d’envoi distincts : un même lien diffusé à trois reprises donne trois
-envois, et des lectures attribuables à chacun. C’est ce que le champ `campaign` d’autrefois ne pouvait
-pas faire, étant commun au lien.
 
 ## Exploitation
 
