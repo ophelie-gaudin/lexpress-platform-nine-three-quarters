@@ -254,39 +254,85 @@ Service existant :
 
 ## Administrer les jetons
 
+Toutes les requêtes SQL de cette partie s'exécutent dans l'**éditeur SQL de Supabase** :
+[supabase.com/dashboard](https://supabase.com/dashboard) → projet **L'Express - Article Premium
+Offert** (`ovifzentveeehhtlnugk`) → **SQL Editor** → **New query**.
+
 ### Créer un jeton (administration)
 
 **Ce n'est pas la base qui engendre le jeton.** Elle n'en voit jamais la valeur : on la fabrique sur sa
 propre machine, et on ne confie à PostgreSQL que son empreinte SHA-256 — exactement comme pour un mot
-de passe. `create_api_client` n'invente donc rien : elle **enregistre** un jeton déjà né ailleurs.
+de passe. `create_api_client` n'invente donc rien : elle **enregistre** un jeton né ailleurs.
 
-Trois gestes, dans cet ordre.
+> **ATTENTION — deux valeurs, 64 caractères hexadécimaux chacune.** Le jeton et son empreinte se
+> ressemblent trait pour trait ; rien ne permet de les distinguer à l'œil. Les confondre est l'erreur
+> la plus facile de toute cette page.
+>
+> | Valeur | Où elle va | Où elle ne va JAMAIS |
+> | --- | --- | --- |
+> | **Le jeton** | au service appelant, par un canal sûr | en base, ni dans un ticket, ni dans un dépôt |
+> | **L'empreinte** | dans Supabase, par `create_api_client` | chez le service appelant |
 
-**1. Engendrer le jeton.** Sur votre machine, jamais dans le navigateur Supabase.
+#### 1. Engendrer le jeton, sur votre machine
 
 ```sh
-JETON=$(openssl rand -hex 32)          # 64 caractères hexadécimaux
+JETON=$(openssl rand -hex 32)
+```
+
+Il n'est pas affiché : c'est voulu, il ne doit traîner ni à l'écran ni dans l'historique du terminal.
+
+#### 2. Afficher l'EMPREINTE, celle qui va dans Supabase
+
+```sh
 printf '%s' "$JETON" | shasum -a 256 | cut -d' ' -f1
 ```
 
-La seconde ligne affiche l'empreinte. C'est **elle** qu'on copie, pas `$JETON`.
+La ligne affichée est **l'empreinte**. C'est elle, et elle seule, qu'on colle à l'étape 3.
 
-**2. Enregistrer l'empreinte en base.** Depuis une session SQL autorisée sur le projet Supabase.
+#### 3. Enregistrer l'empreinte dans l'éditeur SQL de Supabase
+
+Ouvrir [supabase.com/dashboard](https://supabase.com/dashboard) → projet **L'Express - Article Premium
+Offert** (`ovifzentveeehhtlnugk`) → **SQL Editor** dans la barre latérale → **New query**. Coller, puis
+**Run**.
 
 ```sql
 SELECT public.create_api_client(
-  'newsletter-quotidienne',                                             -- nom du service appelant
-  'collez ici l''empreinte de l''étape 1, 64 caractères hexadécimaux',  -- JAMAIS le jeton lui-même
-  'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'              -- note libre, facultative
+  'newsletter-quotidienne',                     -- nom du service appelant, pas d'une personne
+  'collez ici la ligne affichée à l''étape 2',  -- L'EMPREINTE, jamais le jeton
+  'Contact : equipe-newsletter. Ouvert le 8 octobre 2026.'   -- note libre, facultative
 );
 ```
 
-La fonction rend l'identifiant du client créé. Si vous y collez le jeton au lieu de son empreinte, la
-contrainte de forme le refusera — 64 caractères hexadécimaux minuscules sont exigés — mais rien ne vous
-dira que vous avez confondu les deux. Vérifiez d'où vient ce que vous collez.
+La requête rend l'identifiant du client créé. Si vous collez autre chose qu'une empreinte bien formée —
+64 caractères hexadécimaux minuscules — la contrainte la refusera. Mais **si vous collez le jeton, elle
+l'acceptera** : il a exactement la même forme. L'étape 5 est là pour attraper cette confusion.
 
-**3. Transmettre `$JETON` au service appelant** par un canal sûr, puis l'oublier. Il n'est plus
-retrouvable : la base n'en garde que l'empreinte, et c'est tout l'intérêt.
+#### 4. Transmettre le JETON au service appelant
+
+```sh
+printf '%s' "$JETON" | pbcopy                            # macOS
+# printf '%s' "$JETON" | xclip -selection clipboard      # Linux
+```
+
+Le jeton part dans le presse-papiers sans s'afficher. Le coller dans le gestionnaire de secrets du
+service appelant, puis fermer le terminal. Il n'est plus retrouvable ensuite : la base n'en garde que
+l'empreinte, et c'est tout l'intérêt.
+
+#### 5. Vérifier, avant de considérer que c'est fait
+
+Le seul contrôle qui prouve que les deux valeurs sont à leur place :
+
+```sh
+curl --silent --request POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  --header "x-gift-service-token: ${JETON}" \
+  --header 'Content-Type: application/json' \
+  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY"]}'
+```
+
+La réponse doit porter `"client": "newsletter-quotidienne"`. Un `401` signifie que l'empreinte
+enregistrée ne correspond pas au jeton transmis — le plus souvent parce que l'une des deux valeurs a
+été collée à la place de l'autre. Reprendre à l'étape 1 et révoquer la ligne fautive.
 
 ### Révoquer
 
@@ -359,7 +405,8 @@ Après déploiement, vérifier séparément les droits publics, une création av
 
 ## Exploitation
 
-Retrait immédiat, depuis une session SQL autorisée, en ciblant le token concerné :
+Retrait immédiat, depuis l'éditeur SQL de Supabase (voir « Administrer les jetons » plus haut pour le
+chemin exact), en ciblant le token concerné :
 
 ```sql
 UPDATE public.gift_links SET withdrawn_at = now() WHERE token = '<token>';
