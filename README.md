@@ -163,6 +163,50 @@ Diffuser la valeur de **`link`** pour chaque article, et non l’URL originale `
 
 Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certains échecs réseau non gérés peuvent aussi produire une erreur du runtime ; la liste ci-dessus décrit les réponses explicites du code.
 
+## Lire la réponse sans lunettes
+
+La réponse brute est du JSON sur une seule ligne. Deux façons de la rendre lisible, **sans rien
+installer** : `python3` est livré avec macOS et avec Linux.
+
+### Les liens, en clair
+
+Télécharger [`afficher-les-liens.py`](afficher-les-liens.py) à côté de soi, puis :
+
+```sh
+curl … | python3 afficher-les-liens.py
+```
+
+```
+1 lien(s) — demandés par « newsletter-quotidienne »
+
+https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929
+   article complet
+   valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
+   article : https://www.lexpress.fr/secret-defense/la-dgse-investit-…
+
+1 article(s) refusé(s) :
+  - https://www.lexpress.fr/politique/un-vieil-article_1302698.html
+    → ancien format sans identifiant Arc : /politique/un-vieil-article_1302698.html
+```
+
+Le script **n'appelle rien** : il lit ce qu'on lui donne, l'affiche, et s'arrête. Aucun réseau, aucun
+jeton, aucune dépendance.
+
+### Ou simplement la réponse brute, mise en page
+
+```sh
+curl … | python3 -m json.tool
+```
+
+Rien à télécharger, mais c'est du JSON indenté : lisible pour qui en a l'habitude.
+
+### « J'ai demandé 1 jour et la réponse dit un mois »
+
+C'est normal, et c'est voulu. **On ne raccourcit jamais un lien déjà diffusé.** Si cet article avait
+déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec cette promesse : le ramener
+à demain la trahirait. La réponse l'annonce avec `état : lien existant, déjà valable plus longtemps que
+demandé`.
+
 ## Règles importantes pour les intégrateurs
 
 - **Un seul lien par article**, commun à tous les destinataires. Il n’est pas personnel et peut être transféré.
