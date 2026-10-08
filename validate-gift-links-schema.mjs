@@ -19,6 +19,7 @@ await db.exec(readFileSync('gift-links/supabase/006-clients-api.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/007-attribution-liens.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/009-attribution-par-envoi.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));
 
 const q = async (sql, params) => (await db.query(sql, params)).rows;
 
@@ -471,6 +472,38 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
   await db.exec(readFileSync('gift-links/supabase/009-attribution-par-envoi.sql', 'utf8'));
   check((await q("SELECT count(*)::int c FROM pg_proc WHERE proname = 'create_gift_links'"))[0].c === 1,
     'le 009 se rejoue sans laisser deux fonctions derrière lui');
+}
+
+
+// ── 010 : une vue lit avec les droits de QUI la lit.
+//
+// CE QUE ÇA DÉFEND. Une vue s'exécute par défaut avec les droits de son propriétaire, donc elle
+// traverse la RLS des tables qu'elle joint. Fermée à `anon` aujourd'hui — mais un GRANT distrait
+// suffirait à rendre `gift_links` et `gift_link_opens` lisibles sans token.
+{
+  // On rejoue le 010 d'abord : les blocs précédents ont rejoué le 008 et le 009, et un
+  // CREATE OR REPLACE VIEW efface les options. C'est exactement ce que ce fichier corrige.
+  await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));
+
+  const vues = await q(`SELECT c.relname,
+      coalesce((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                 WHERE option_name = 'security_invoker'), 'non defini') AS invoker
+    FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+    WHERE ns.nspname = 'public' AND c.relkind = 'v' ORDER BY 1`);
+  check(vues.length > 0 && vues.every((v) => v.invoker === 'true'),
+    `C’EST LA PROPRIÉTÉ QUI COMPTE : toute vue du schéma public lit avec les droits de son LECTEUR — sinon un GRANT distrait ouvrirait les tables derrière elle, RLS comprise. Trouvées : ${vues.map((v) => v.relname + '=' + v.invoker).join(', ')}`);
+
+  for (const t of ['articles', 'gift_links', 'gift_link_opens', 'api_clients'])
+    check(!(await q('SELECT has_table_privilege($1, $2, $3) AS ok', ['anon', t, 'SELECT']))[0].ok,
+      `et ${t} reste fermée à anon : la lecture ne passe que par get_gift_article`);
+
+  // ET IL SE REJOUE SANS SE DÉFAIRE : l'option vit dans la définition, pas à côté d'elle.
+  await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));
+  const encore = await q(`SELECT coalesce((SELECT option_value FROM pg_options_to_table(c.reloptions)
+      WHERE option_name = 'security_invoker'), 'non defini') AS invoker
+    FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+    WHERE ns.nspname = 'public' AND c.relname = 'gift_links_by_client'`);
+  check(encore[0].invoker === 'true', 'le 010 se rejoue sans perdre son option');
 }
 
 console.log(`liens offerts (lot 1, schéma) : ${n} vérifications passées.`);

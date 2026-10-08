@@ -260,7 +260,7 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 
 ## Installer dans un autre environnement
 
-Utiliser un projet Supabase dédié. Appliquer **les neuf fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
+Utiliser un projet Supabase dédié. Appliquer **les dix fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
 
 | Fichier | Ce qu’il apporte |
 | --- | --- |
@@ -273,6 +273,7 @@ Utiliser un projet Supabase dédié. Appliquer **les neuf fichiers de `gift-link
 | `007-attribution-liens.sql` | qui a créé chaque lien, qui l’a prolongé |
 | `008-noms-anglais.sql` | tout le schéma en anglais, par renommage |
 | `009-attribution-par-envoi.sql` | la campagne quitte le lien : elle appartient à l’envoi |
+| `010-vues-security-invoker.sql` | les vues lisent avec les droits de qui les interroge |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
