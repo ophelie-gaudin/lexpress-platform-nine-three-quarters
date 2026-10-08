@@ -165,54 +165,85 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 
 ## Lire la réponse sans lunettes
 
-La réponse brute est du JSON sur une seule ligne. Deux façons de la rendre lisible, **sans rien
-installer** : `python3` est livré avec macOS et avec Linux.
+**La même commande, deux fois.** La seule différence tient aux quelques caractères ajoutés à la fin.
 
-### Les liens, en clair
-
-Télécharger [`afficher-les-liens.py`](afficher-les-liens.py) à côté de soi, puis :
+### Sans le raccourci
 
 ```sh
-curl --silent … | python3 afficher-les-liens.py
+curl --silent --request POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  --header "x-gift-service-token: ${GIFT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY",
+                    "https://www.lexpress.fr/…-RQOLMEM5NZE3BNTWPJEEGC5B5Y"]}'
 ```
 
-**`--silent` n'est pas décoratif** : sans lui, curl écrit sa jauge de progression dans le terminal, et
-le lien à copier se perd au milieu de pourcentages.
+Ce que le terminal affiche — une seule ligne, qui déborde de l'écran :
+
+```
+{"links":[{"url":"https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY","arc_id":"LQBW5JK75BDOBJHRA76NRFPJFY","token":"ba9037a631eb4cc7ba8f173bde5a5929","link":"https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929","expires_at":"2026-11-07T03:30:24.151+00:00","content":"full","source":"arc","state":"unchanged"},{"url":"https://www.lexpress.fr/politique/elections/en-2027-…
+```
+
+Les liens y sont — deux fois `"link":"https://articles.lexpress.fr/a/…"` — mais il faut les pêcher.
+
+### Avec le raccourci
+
+La même commande, plus **` | python3 afficher-les-liens.py`** au bout.
+
+```sh
+curl --silent --request POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  --header "x-gift-service-token: ${GIFT_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY",
+                    "https://www.lexpress.fr/…-RQOLMEM5NZE3BNTWPJEEGC5B5Y"]}' \
+  | python3 afficher-les-liens.py
+```
 
 ```
 ────────────────────────────────────────────────────────────────────────
-  1 lien(s) — demandés par « newsletter-quotidienne »
+  2 lien(s) — demandés par « newsletter-quotidienne »
 ────────────────────────────────────────────────────────────────────────
 
 https://articles.lexpress.fr/a/ba9037a631eb4cc7ba8f173bde5a5929
    article complet
    valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
-   article : https://www.lexpress.fr/secret-defense/la-dgse-investit-…
+   article : https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-…
 
-────────────────────────────────────────────────────────────────────────
-  1 article(s) refusé(s)
-────────────────────────────────────────────────────────────────────────
-
-  - https://www.lexpress.fr/politique/un-vieil-article_1302698.html
-    → ancien format sans identifiant Arc : /politique/un-vieil-article_1302698.html
+https://articles.lexpress.fr/a/ea460a275f6d41149c01095eb5693111
+   article complet
+   valable jusqu'au 07/11/2026 · lien existant, déjà valable plus longtemps que demandé
+   article : https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-…
 ```
 
-Le script **n'appelle rien** : il lit ce qu'on lui donne, l'affiche, et s'arrête. Aucun réseau, aucun
-jeton, aucune dépendance.
+Le lien à diffuser est la **première ligne de chaque bloc**. C'est la seule qu'on copie.
 
-### Ou simplement la réponse brute, mise en page
+### Ce qu'il faut pour que le raccourci marche
+
+Télécharger [`afficher-les-liens.py`](afficher-les-liens.py) et le placer dans le dossier d'où l'on
+lance la commande. Rien d'autre : `python3` est livré avec macOS et avec Linux, et le script n'a aucune
+dépendance.
+
+Il **n'appelle rien** : il lit ce que curl lui passe, l'affiche, et s'arrête. Ni réseau, ni jeton. On
+peut le relire en entier, il fait soixante lignes.
+
+**`--silent` n'est pas décoratif.** Sans lui, curl écrit sa jauge de progression — des pourcentages et
+des colonnes de débit — juste au-dessus du résultat, et le lien s'y perd.
+
+### Entre les deux : le JSON mis en page
 
 ```sh
 curl --silent … | python3 -m json.tool
 ```
 
-Rien à télécharger, mais c'est du JSON indenté : lisible pour qui en a l'habitude.
+Rien à télécharger, mais ça reste du JSON : indenté et lisible pour qui en a l'habitude, opaque pour
+les autres.
 
 ### « J'ai demandé 1 jour et la réponse dit un mois »
 
 C'est normal, et c'est voulu. **On ne raccourcit jamais un lien déjà diffusé.** Si cet article avait
 déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec cette promesse : le ramener
-à demain la trahirait. La réponse l'annonce avec `état : lien existant, déjà valable plus longtemps que
+à demain la trahirait. La réponse l'annonce avec `lien existant, déjà valable plus longtemps que
 demandé`.
 
 ## Règles importantes pour les intégrateurs
