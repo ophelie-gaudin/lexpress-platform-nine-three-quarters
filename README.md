@@ -137,11 +137,8 @@ La réponse contient deux listes :
 - `rejected` : `url` et `erreur` pour chaque refus.
 - `client` : le nom du service reconnu par son jeton.
 
-`content` vaut `full` ou `preview`. `source` vaut `arc` ou `page-publique`. `state` vaut `created`, `extended` ou `unchanged`. Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés : contrôler les deux listes. Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.
-
-> **Cette réponse arrive sur une seule ligne**, qui déborde de l'écran. La section
-> [« Lire la réponse sans lunettes »](#lire-la-réponse-sans-lunettes) montre deux façons de la rendre
-> lisible, sans rien installer ni télécharger.
+Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés :
+**contrôler les deux listes**. Le détail champ par champ est en [« Lire la réponse »](#lire-la-réponse).
 
 ### Exemple : prolonger un lien et en créer un autre dans la même requête
 
@@ -222,36 +219,9 @@ Diffuser la valeur de **`link`** pour chaque article, et non l’URL originale `
 
 Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certains échecs réseau non gérés peuvent aussi produire une erreur du runtime ; la liste ci-dessus décrit les réponses explicites du code.
 
-## Lire la réponse sans lunettes
+## Lire la réponse
 
-La réponse arrive sur **une seule ligne**, qui déborde de l'écran :
-
-```
-{"links":[{"url":"https://www.lexpress.fr/politique/affaire-bardella-les-jours-dapres-au-rassemblement-national-ULRPQWYZ5JCKTBM3LE7MJBVNAQ/","arc_id":"ULRPQWYZ5JCKTBM3LE7MJBVNAQ","token":"d30067cd211a4cdbb59c8ddc7c5ceeaf","link":"https://articles.lexpress.fr/a/d30067cd…
-```
-
-Les liens y sont — chaque `"link":"https://articles.lexpress.fr/a/…"` — mais il faut les pêcher. Deux
-façons de la rendre lisible, **sans rien installer et sans rien télécharger**.
-
-> **Sous Windows, cette section est sans objet.** `Invoke-RestMethod` comprend déjà le JSON, et
-> `Format-Table` en fait un tableau — voir « Utiliser le jeton » plus haut.
-
-### Dans le terminal : ajouter sept caractères
-
-`python3` est livré avec macOS et avec Linux. Ajouter **` | python3 -m json.tool`** à la fin de la
-commande suffit :
-
-```sh
-curl --silent -X POST \
-  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
-  -H 'x-gift-service-token: VOTRE_JETON' \
-  -H 'Content-Type: application/json' \
-  -d '{
-        "urls": ["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],
-        "expires_in_days": 15
-      }' \
-  | python3 -m json.tool
-```
+**`link`** est l'adresse à diffuser. **`url`** est l'article d'origine, toujours derrière son mur.
 
 ```json
 {
@@ -272,35 +242,19 @@ curl --silent -X POST \
 }
 ```
 
-**`link`** est l'adresse à diffuser. **`url`** est l'article d'origine, toujours derrière son mur.
+| Champ | Ce qu'il dit |
+| --- | --- |
+| `link` | **le lien à diffuser** |
+| `content` | `full` = article entier · `preview` = titre et chapeau seulement |
+| `expires_at` | la date au-delà de laquelle le lien ne s'ouvre plus |
+| `state` | `created` = nouveau · `extended` = date repoussée · `unchanged` = déjà valable plus longtemps |
+| `rejected` | les articles refusés, **à vérifier même quand la réponse aboutit** |
+| `client` | le service que votre jeton a identifié |
 
-### Dans le navigateur : un tableau
+**Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.** Un `preview` ne
+donne que le titre et le chapeau.
 
-Pour plusieurs liens d'un coup, un tableau se lit mieux qu'une liste imbriquée.
-
-1. Copier la réponse entière, telle qu'elle apparaît dans le terminal.
-2. Ouvrir n'importe quelle page dans le navigateur, puis la **console** : `Cmd ⌥ J` sur Chrome
-   (macOS), `Ctrl ⇧ J` sur Windows, ou `F12` puis l'onglet *Console*.
-3. Taper la ligne ci-dessous, **sélectionner `COLLEZ_ICI` et coller la réponse par-dessus**, puis
-   `Entrée`.
-
-```js
-console.table(JSON.parse(`COLLEZ_ICI`).links)
-```
-
-Un tableau s'affiche, une ligne par article, avec `link`, `expires_at`, `content` et `state` en
-colonnes. Les accents graves autour de `COLLEZ_ICI` ne sont pas décoratifs : la réponse contient des
-guillemets droits, et seuls les accents graves les laissent passer.
-
-**Chrome bloque le collage dans la console la première fois** et demande d'écrire `allow pasting` puis
-`Entrée`. C'est une protection, elle ne se présente qu'une fois par navigateur.
-
-Rien n'est installé, et **rien ne sort de votre machine** : la console exécute le code chez vous.
-
-> **À éviter : les sites de mise en forme JSON en ligne.** Y coller la réponse envoie vos liens sur le
-> serveur de quelqu'un d'autre. Les deux méthodes ci-dessus ne demandent pas plus d'effort.
-
-### « J'ai demandé 1 jour et la réponse dit un mois »
+## « J'ai demandé 1 jour et la réponse dit un mois »
 
 C'est normal, et c'est voulu. **On ne raccourcit jamais un lien déjà diffusé.** Si cet article avait
 déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec cette promesse : le ramener
