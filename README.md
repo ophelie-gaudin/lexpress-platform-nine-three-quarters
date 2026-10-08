@@ -36,7 +36,9 @@ qu’elle rend.
 
 ### Demander un accès
 
-Écrire à **Ophélie Gaudin**, responsable du service, en donnant **le nom du service appelant** plutôt que le vôtre. Ce nom apparaîtra dans chaque réponse de l’API et dans le journal d’attribution des liens : `newsletter-quotidienne` se lit mieux que `jean`, et survit à un départ.
+Écrire à la personne en charge du service — à ce jour **Ophélie Gaudin** — ou à toute personne ayant les
+droits sur le projet Supabase `ovifzentveeehhtlnugk` (*L'Express - Article Premium Offert*). Donner
+**le nom du service appelant** plutôt que le vôtre. Ce nom apparaîtra dans chaque réponse de l’API et dans le journal d’attribution des liens : `newsletter-quotidienne` se lit mieux que `jean`, et survit à un départ.
 
 Le jeton est montré **une seule fois**, à sa création. Il n’est jamais retrouvable ensuite : la base n’en garde que l’empreinte SHA-256. Le ranger tout de suite dans le gestionnaire de secrets du service appelant.
 
@@ -71,7 +73,7 @@ La réponse nomme le service reconnu dans son champ `client`. C’est le moyen l
 }
 ```
 
-`urls` est obligatoire ; la durée vaut 15 jours par défaut. `channel` et `campaign` sont tolérés mais **ignorés** depuis le 8 octobre 2026 — voir la règle d’attribution plus bas. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
+`urls` est obligatoire ; la durée vaut 15 jours par défaut. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
 
 La réponse contient deux listes :
 
