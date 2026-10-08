@@ -85,6 +85,10 @@ La réponse contient deux listes :
 
 `content` vaut `full` ou `preview`. `source` vaut `arc` ou `page-publique`. `state` vaut `created`, `extended` ou `unchanged`. Une réponse HTTP 200 peut contenir des refus, voire aucun lien si tous les articles sont retirés : contrôler les deux listes. Pour promettre un article complet, vérifier `content: "full"` avant de diffuser.
 
+> **Cette réponse arrive sur une seule ligne**, qui déborde de l'écran. La section
+> [« Lire la réponse sans lunettes »](#lire-la-réponse-sans-lunettes) montre la même commande avec et
+> sans le raccourci qui la rend lisible — sans rien installer.
+
 ### Exemple : prolonger un lien et en créer un autre dans la même requête
 
 Scénario illustratif : l’appel est effectué le **5 octobre 2026 à 13 h UTC**, pour offrir deux articles pendant **15 jours à partir de cet appel**. Les tokens et les dates ci-dessous sont fictifs ; cet exemple ne décrit pas l’état actuel de la base.
