@@ -44,23 +44,68 @@ Le jeton est montré **une seule fois**, à sa création. Il n’est jamais retr
 
 ### Utiliser le jeton
 
-Le passer dans l’en-tête `x-gift-service-token` à chaque appel. La fonction en calcule l’empreinte et la compare à la base ; le jeton en clair ne quitte jamais l’appelant et la fonction.
+Le passer dans l'en-tête `x-gift-service-token` à chaque appel. La fonction en calcule l'empreinte et la
+compare à la base ; le jeton en clair ne quitte jamais l'appelant et la fonction.
+
+#### macOS et Linux
+
+**Une seule ligne, à copier d'un bloc.** C'est la forme la plus sûre : sans retour à la ligne, rien ne
+peut la casser.
 
 ```sh
-curl --silent --request POST \
-  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
-  --header "x-gift-service-token: ${GIFT_TOKEN}" \
-  --header 'Content-Type: application/json' \
-  --data '{"urls": ["https://www.lexpress.fr/…-LQBW5JK75BDOBJHRA76NRFPJFY"]}'
+curl --silent -X POST 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' -H "x-gift-service-token: $GIFT_TOKEN" -H 'Content-Type: application/json' -d '{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}' | python3 -m json.tool
 ```
 
-La réponse nomme le service reconnu dans son champ `client`. C’est le moyen le plus simple de vérifier qu’on appelle avec le bon jeton :
+La version sur plusieurs lignes se lit mieux, mais elle a un piège :
+
+```sh
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links' \
+  -H "x-gift-service-token: $GIFT_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}' \
+  | python3 -m json.tool
+```
+
+> **Le `\` ne protège que le retour à la ligne IMMÉDIAT.** Un seul espace après lui et tout se défait :
+> le shell prend la ligne suivante pour une commande et répond
+> `no such file or directory: https://…`. Un copier-coller suffit à introduire cet espace invisible.
+> En cas de doute, reprendre la version sur une ligne.
+
+#### Windows, dans PowerShell
+
+**N'utilisez pas `curl` sous Windows PowerShell :** c'est un alias d'`Invoke-WebRequest`, qui n'accepte
+pas les mêmes options et rend des erreurs incompréhensibles. `Invoke-RestMethod` fait mieux — il
+**comprend déjà le JSON**, donc aucun outil de mise en forme n'est nécessaire.
+
+Chaque ligne se suffit à elle-même : aucun caractère de continuation, donc aucun piège d'espace.
+
+```powershell
+$uri    = 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links'
+$entete = @{ 'x-gift-service-token' = 'VOTRE_JETON' }
+$corps  = '{"urls":["https://www.lexpress.fr/…-ULRPQWYZ5JCKTBM3LE7MJBVNAQ"],"expires_in_days":15}'
+
+$r = Invoke-RestMethod -Method Post -Uri $uri -Headers $entete -ContentType 'application/json' -Body $corps
+
+$r.links | Format-Table link, expires_at, content, state
+$r.rejected | Format-Table url, erreur
+```
+
+`Format-Table` affiche un tableau, une ligne par article. **`link`** est l'adresse à diffuser.
+
+> **Un refus n'affiche pas de texte, mais une erreur rouge.** `Invoke-RestMethod` s'arrête sur un code
+> HTTP 4xx au lieu de montrer la réponse. Un `401` signifie que le jeton est absent, inconnu ou révoqué.
+
+La réponse nomme le service reconnu dans son champ `client`. C'est le moyen le plus simple de vérifier
+qu'on appelle avec le bon jeton :
 
 ```json
 { "links": [ … ], "rejected": [], "client": "newsletter-quotidienne" }
 ```
 
-**Un jeton absent, inconnu ou révoqué reçoit un `401` nu**, sans motif. La base sait distinguer les trois cas et les journalise ; l’appelant ne l’apprend pas. Le lui dire renseignerait qui cherche à deviner.
+**Un jeton absent, inconnu ou révoqué reçoit un `401` nu**, sans motif. La base sait distinguer les
+trois cas et les journalise ; l'appelant ne l'apprend pas. Le lui dire renseignerait qui cherche à
+deviner.
 
 ## Contrat de création
 
@@ -177,6 +222,9 @@ La réponse arrive sur **une seule ligne**, qui déborde de l'écran :
 
 Les liens y sont — chaque `"link":"https://articles.lexpress.fr/a/…"` — mais il faut les pêcher. Deux
 façons de la rendre lisible, **sans rien installer et sans rien télécharger**.
+
+> **Sous Windows, cette section est sans objet.** `Invoke-RestMethod` comprend déjà le JSON, et
+> `Format-Table` en fait un tableau — voir « Utiliser le jeton » plus haut.
 
 ### Dans le terminal : ajouter sept caractères
 
