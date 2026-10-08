@@ -81,22 +81,63 @@ date seule, et ne jamais inventer de nom.
 
 ## 5. Le bouton d'abonnement
 
-Présent dans les cinq états, y compris sur un refus. Valeurs réelles, relevées dans la base de l'agent :
+Présent dans les cinq états, y compris sur un refus.
+
+Destination : `https://abonnements-digitaux.lexpress.fr/offres`
+
+**La page ne fabrique aucun paramètre de suivi : elle recopie ceux du visiteur.**
+
+```js
+const p = new URLSearchParams(location.search);
+const abo = new URL('https://abonnements-digitaux.lexpress.fr/offres');
+
+// LISTE BLANCHE. Tout `at_*` passe, plus `s`. Rien d'autre.
+for (const [cle, valeur] of p)
+  if (valeur && (cle.startsWith('at_') || cle === 's')) abo.searchParams.set(cle, valeur);
+
+// href = abo.toString()
+```
+
+**Ce qui change (8 oct. 2026)** — avant, la page posait `refTarif=1329`, codait en dur
+`at_medium=Whatsapp` et `at_campaign=prospects`, et lisait `at_campaign_group` dans le champ `campaign`
+rendu par la base. Les trois étaient faux pour des raisons différentes.
+
+- **Le canal codé en dur.** Il était vrai quand WhatsApp était le seul appelant. Le service s'ouvre à
+  d'autres : une newsletter qui diffuse un lien offert verrait ses abonnements attribués à WhatsApp.
+- **La campagne relue de la base.** Un lien est COMMUN à tous ses destinataires. Offert en
+  `prospects_chauds` lundi puis en `prospects_abandon` jeudi, il n'a qu'une ligne, et le dernier appel
+  écrase la campagne du premier : les conversions de lundi partaient sur `prospects_abandon`. Le lecteur
+  de lundi arrivait pourtant avec `at_campaign_group=prospects_chauds` dans sa propre URL.
+- **`refTarif=1329`** désignait un tarif sur le formulaire d'inscription. `/offres` laisse choisir, ce
+  qui convient à quelqu'un qui vient de lire un article offert et n'a rien demandé.
+
+**POURQUOI UNE LISTE BLANCHE ET PAS UNE RECOPIE ENTIÈRE.** L'URL d'un lien offert est publique et se
+transfère. Tout recopier laisserait n'importe qui y glisser les paramètres de son choix, qui
+atterriraient dans Piano et pourraient écraser de vraies dimensions. `at_*` et `s`, rien d'autre.
+
+**`set`, JAMAIS `append`.** Un paramètre présent deux fois dans l'URL d'arrivée donnerait deux valeurs
+à la même dimension, et Piano garderait celle qu'il veut.
+
+**Un paramètre absent reste absent.** Pas de valeur par défaut, pas de repli sur la base : c'est la même
+règle que pour la lecture. Une absence est une information — un lien ouvert sans `at_medium` est un lien
+transféré ou une visite directe, et le dire est plus utile que de l'attribuer au hasard.
+
+Le bouton reste affiché **dans les cinq états**, refus compris. Les paramètres venant de l'URL, ils sont
+présents même sur un lien expiré ou retiré : la conversion reste attribuée à ce qui a amené la personne
+jusque-là.
+
+### Ce que ça donne bout en bout
 
 ```
-https://abonnements-digitaux.lexpress.fr/inscription?refTarif=1329
-  &at_medium=Whatsapp
-  &at_campaign=prospects
-  &at_campaign_group=<campaign rendu par la fonction>
+sollicitation    bouton WhatsApp → /a/<token>?s=<envoi>&at_medium=Whatsapp
+                                   &at_campaign=prospects&at_campaign_group=prospects_chauds
+lecture          gift_link_opens : une ligne, avec ce segment et cet envoi
+abonnement       /offres?s=<envoi>&at_medium=Whatsapp&at_campaign=prospects
+                 &at_campaign_group=prospects_chauds
 ```
 
-`at_medium` et `at_campaign` sont fixes. **`at_campaign_group` vaut le champ `campaign`** que la
-fonction renvoie — `prospects_chauds`, `prospects_paid`, `prospects_abandon`. La page ne peut pas le
-deviner : la campagne est connue du LIEN, pas de l'article. Quand `campaign` est `null` (lien inconnu),
-omettre le paramètre plutôt que d'en inventer un.
-
-La campagne est rendue **même sur un refus** (`expired`, `withdrawn`) : le bouton reste affiché, et sa
-conversion doit rester attribuée à la campagne qui a amené la personne jusque-là.
+Même vocabulaire des deux côtés : la base sait qui a lu, Piano sait qui s'est abonné, et `s` relie les
+deux. C'est le seul maillon qui survit au départ vers lexpress.fr.
 
 ## 5 bis. Le corps contient du HTML
 

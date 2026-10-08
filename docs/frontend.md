@@ -25,13 +25,19 @@ Le corps comporte du HTML issu d’Arc. Appliquer un assainissement avec les seu
 
 ## Abonnement et attribution
 
-Le bouton est présent dans les cinq statuts SQL. Configuration actuelle :
+Le bouton est présent dans les cinq statuts SQL. Destination : `https://abonnements-digitaux.lexpress.fr/offres`.
 
-- Origine : `https://abonnements-digitaux.lexpress.fr/inscription`.
-- `refTarif=1329`, `at_medium=Whatsapp`, `at_campaign=prospects`.
-- `at_campaign_group` : valeur `campaign` rendue par la RPC, omise si nulle, encodée comme paramètre URL.
+**La page ne fabrique aucun paramètre de suivi : elle recopie ceux du visiteur.** Liste blanche — tout `at_*`, plus `s`, rien d'autre. `set` et non `append`, pour qu'une dimension ne reçoive jamais deux valeurs. Un paramètre absent de l'URL d'arrivée reste absent : pas de valeur par défaut, pas de repli sur la base.
 
-Ces valeurs sont propres à la campagne actuelle. Elles sont à adapter pour un usage email ou une autre campagne ; le frontend actuel ne constitue pas une interface générique multicanal.
+```js
+const abo = new URL('https://abonnements-digitaux.lexpress.fr/offres');
+for (const [cle, valeur] of new URLSearchParams(location.search))
+  if (valeur && (cle.startsWith('at_') || cle === 's')) abo.searchParams.set(cle, valeur);
+```
+
+Le frontend devient ainsi **agnostique du canal** : il ne sait pas s'il sert WhatsApp, une newsletter ou un autre service, et c'est exactement ce qu'il doit faire. Jusqu'au 8 octobre 2026 il codait en dur `at_medium=Whatsapp` et lisait `at_campaign_group` dans le champ `campaign` rendu par la RPC — ce champ a disparu, et l'attribution appartient à l'envoi, pas au lien.
+
+La chaîne est alors complète et dans le même vocabulaire des deux côtés : la sollicitation pose les paramètres sur le lien diffusé, `gift_link_opens` enregistre la lecture avec son segment et son identifiant d'envoi, et Piano reçoit les mêmes sur la conversion. `s` est le seul maillon qui survit au départ vers lexpress.fr.
 
 ## Recette avec le jeu fictif
 

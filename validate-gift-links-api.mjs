@@ -263,6 +263,10 @@ const PAGE = `<html><head>
     'la réponse nomme le service appelant, et il n’y a plus d’appelant anonyme à nommer « legacy »');
   check(/client\.name/.test(b) && !/client\.nom/.test(b),
     'et la fonction lit bien la colonne `name` rendue par verify_api_client');
+
+  // 009 : ce qui appartient à l'envoi ne part plus sur le lien.
+  check(!/p_channel/.test(b) && !/p_campaign\b/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la fonction n’envoie plus ni canal ni campagne — le lien est commun à tous ses destinataires, lui en coller une attribuait toutes les lectures à la dernière déclarée');
 }
 
 

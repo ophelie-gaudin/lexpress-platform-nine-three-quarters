@@ -1,6 +1,7 @@
 // POST /create-gift-links — le service ne connaît pas WhatsApp, et n'appelle jamais Lovable.
 //
-// Corps attendu : { urls: string[], channel?, campaign?, expires_in_days? }
+// Corps attendu : { urls: string[], expires_in_days? }
+//                 `channel` et `campaign` sont tolérés et IGNORÉS — voir l'appel RPC.
 // Réponse       : { links: [{ url, arc_id, token, link, expires_at, content }], rejected: [...] }
 //
 // AUTHENTIFICATION : un jeton PAR SERVICE dans l'en-tête `x-gift-service-token`, révocable un par un.
@@ -100,10 +101,14 @@ Deno.serve(async (req) => {
   const jours = Number(corps.expires_in_days ?? 15);
   const { data, error } = await db.rpc('create_gift_links', {
     p_arc_ids: prets.map((p) => p.arcId),
-    p_channel: (corps.channel as string) ?? null,
-    p_campaign: (corps.campaign as string) ?? null,
+    // NI `channel` NI `campaign` (8 oct. 2026). Le lien est COMMUN à tous ses destinataires : lui coller
+    // une campagne attribuait toutes les lectures à la dernière déclarée, y compris les plus anciennes.
+    // L'attribution appartient à l'envoi et voyage dans la query string du lien diffusé —
+    // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — puis se range dans `gift_link_opens`,
+    // une ligne par lecture. Les deux clés restent acceptées dans le corps pour ne pas casser les
+    // appelants en place ; elles ne sont simplement plus transmises.
     // QUI DEMANDE. Rattache le lien à son service : créé par lui, et prolongé par lui si la date bouge.
-    // NULL pour l'appelant d'héritage — une absence honnête plutôt qu'une attribution devinée.
+    // NULL pour l'appelant sans jeton nommé — une absence honnête plutôt qu'une attribution devinée.
     p_client_id: clientId,
     p_expires_at: Number.isFinite(jours) && jours > 0
       ? new Date(Date.now() + jours * 86400000).toISOString() : null,

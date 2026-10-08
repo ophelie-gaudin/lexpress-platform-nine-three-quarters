@@ -156,13 +156,11 @@ Les compteurs par service vivent dans `api_clients` : `calls`, `links_created`, 
 ```json
 {
   "urls": ["https://www.lexpress.fr/rubrique/titre-LQBW5JK75BDOBJHRA76NRFPJFY"],
-  "expires_in_days": 15,
-  "channel": "whatsapp",
-  "campaign": "prospects"
+  "expires_in_days": 15
 }
 ```
 
-`urls` est obligatoire ; la durée vaut 15 jours par défaut. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
+`urls` est obligatoire ; la durée vaut 15 jours par défaut. `channel` et `campaign` sont tolérés mais **ignorés** depuis le 8 octobre 2026 — voir la règle d’attribution plus bas. Une URL doit appartenir au domaine accepté et porter un identifiant Arc de 26 caractères. L’ancien format `…_1302698.html` est rejeté avec un motif.
 
 La réponse contient deux listes :
 
@@ -195,9 +193,7 @@ curl --request POST \
       "https://www.lexpress.fr/secret-defense/la-dgse-investit-dans-lia-les-maitres-espions-francais-se-confessent-LQBW5JK75BDOBJHRA76NRFPJFY",
       "https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-pour-survivre-le-dilemme-des-candidats-a-la-presidentielle-RQOLMEM5NZE3BNTWPJEEGC5B5Y"
     ],
-    "expires_in_days": 15,
-    "channel": "whatsapp",
-    "campaign": "prospects_chauds"
+    "expires_in_days": 15
   }'
 ```
 
@@ -257,14 +253,14 @@ Le repli Arc → page publique fournit un aperçu, pas le corps premium. Certain
 - **Un seul lien par article**, commun à tous les destinataires. Il n’est pas personnel et peut être transféré.
 - Redemander un article conserve son token et prolonge sa durée si nécessaire. Une prolongation profite aussi aux anciens destinataires. Une demande plus courte ne raccourcit jamais la durée.
 - Un lien expiré peut être rouvert par une nouvelle demande ; un lien retiré manuellement reste retiré.
-- `channel` et `campaign` sont enregistrés sur le lien commun et peuvent être remplacés lors d’un nouvel appel. Le modèle actuel ne garantit pas une attribution indépendante par destinataire ou par campagne.
+- **L’attribution se met dans l’URL du lien diffusé, pas dans la requête de création.** Un lien est commun à tous ses destinataires ; lui coller une campagne attribuerait toutes ses lectures à la dernière déclarée. Diffuser `…/a/<token>?s=<identifiant d’envoi>&at_medium=…&at_campaign=…&at_campaign_group=…` : chaque lecture est enregistrée avec SON contexte, et un même lien diffusé dans trois campagnes donne trois séries distinctes.
 - La page sert une copie. Les corrections ou dépublications du CMS ne s’y répercutent pas automatiquement. Un nouvel appel peut rafraîchir le cache ; un retrait urgent demande une action explicite.
 - Les tables sont fermées aux rôles publics. La lecture passe uniquement par `get_gift_article` ; la création requiert les droits serveur.
 - `fake_body: true` est réservé aux essais et produit un texte clairement marqué démonstration quand aucun vrai corps n’est disponible.
 
 ## Installer dans un autre environnement
 
-Utiliser un projet Supabase dédié. Appliquer **les huit fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
+Utiliser un projet Supabase dédié. Appliquer **les neuf fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
 
 | Fichier | Ce qu’il apporte |
 | --- | --- |
@@ -276,6 +272,7 @@ Utiliser un projet Supabase dédié. Appliquer **les huit fichiers de `gift-link
 | `006-clients-api.sql` | **un jeton par service** — sans lui, aucun appel n’est authentifiable |
 | `007-attribution-liens.sql` | qui a créé chaque lien, qui l’a prolongé |
 | `008-noms-anglais.sql` | tout le schéma en anglais, par renommage |
+| `009-attribution-par-envoi.sql` | la campagne quitte le lien : elle appartient à l’envoi |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
@@ -286,6 +283,26 @@ Configurer les variables serveur, exécuter les tests et générer le bundle. D�
 Brancher et publier la page Lovable conformément à [son contrat](docs/frontend.md). Pour un autre environnement, adapter l’origine de lecture via `GIFT_LINK_BASE`, la connexion Supabase du frontend et les paramètres du bouton d’abonnement.
 
 Après déploiement, vérifier séparément les droits publics, une création avec du contenu réel, les cinq états de lecture et une panne réseau avec réessai. Les tests locaux ne valident ni la configuration distante ni le frontend publié. Pour les tests externes, utiliser un environnement isolé, des articles fictifs et des envois simulés.
+
+## Lire l’attribution
+
+Qui a fabriqué chaque lien, et qui en a repoussé la date :
+
+```sql
+SELECT title, created_by, updated_by, updated_at, expires_at, opens
+FROM public.gift_links_by_client ORDER BY created_at DESC;
+```
+
+Combien de lectures par campagne — une ligne par lecture, avec le segment que **ce** visiteur portait :
+
+```sql
+SELECT campaign_group, reads, sends, articles, last_read
+FROM public.gift_link_reads_by_campaign ORDER BY reads DESC;
+```
+
+`sends` compte les identifiants d’envoi distincts : un même lien diffusé à trois reprises donne trois
+envois, et des lectures attribuables à chacun. C’est ce que le champ `campaign` d’autrefois ne pouvait
+pas faire, étant commun au lien.
 
 ## Exploitation
 
