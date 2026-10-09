@@ -1,6 +1,6 @@
 // FICHIER ENGENDRÉ — ne pas modifier à la main.
 // Régénérer : node build-gift-links-function.mjs
-// Sources : gift-links/functions/_shared/apercu.mjs, gift-links/functions/_shared/arc-id.mjs, gift-links/functions/_shared/arc.mjs, gift-links/functions/create-gift-links/index.ts
+// Sources : gift-links/functions/_shared/apercu.mjs, gift-links/functions/_shared/arc-id.mjs, gift-links/functions/_shared/arc.mjs, gift-links/functions/_shared/corps.mjs, gift-links/functions/create-gift-links/index.ts
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 // Ce qu'on peut lire SANS Arc.
@@ -303,6 +303,54 @@ function depuisArc(doc, repliUrl) {
   };
 }
 
+// Ce que le service accepte dans le corps d'une requête, et ce qu'il en refuse.
+//
+// POURQUOI UN MODULE À PART. Ces règles vivaient dans la fonction Edge, qui ne tourne que sous Deno :
+// aucun test Node ne pouvait les EXÉCUTER. Les contrôles se contentaient de chercher des chaînes dans
+// le fichier déployable — une revue adverse a montré qu'on pouvait désactiver le refus
+// d'authentification sans qu'une seule assertion bronche. Ici, les cas appellent le vrai code et
+// regardent le vrai résultat.
+
+/** Les seules clés que l'appelant peut poser. Toute autre est un refus nommé. */
+const CLES_ACCEPTEES = ['urls', 'expires_in_days', 'fake_body'];
+
+/**
+ * UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
+ *
+ * `channel` et `campaign` ont été acceptées puis ignorées en silence. Un appelant qui les envoyait
+ * croyait attribuer ses liens ; il ne faisait rien, et rien ne le lui disait. Une faute de frappe sur
+ * `expires_in_days` se payait pareil : quinze jours au lieu de trente, sans un mot.
+ */
+function clesInconnues(corps) {
+  if (!corps || typeof corps !== 'object' || Array.isArray(corps)) return [];
+  return Object.keys(corps).filter((c) => !CLES_ACCEPTEES.includes(c));
+}
+
+/**
+ * LA DURÉE, VALIDÉE AVANT TOUTE ÉCRITURE.
+ *
+ * `-1`, `0`, `false` et `"abc"` devenaient quinze jours en silence ; `1e300` levait une exception une
+ * fois le contenu partagé déjà modifié. Rend `{ jours }` ou `{ erreur }`.
+ */
+function dureeDemandee(valeur) {
+  // ON EXIGE UN NOMBRE, PAS QUELQUE CHOSE QUI S'Y CONVERTIT. `Number(true)` vaut 1 : `expires_in_days:
+  // true` serait devenu un jour, en silence. `"30"` passerait aussi, et le jour où quelqu'un écrit
+  // `"30 jours"` il recevrait quinze. Trouvé par un cas écrit pour cette révision.
+  if (valeur !== undefined && typeof valeur !== 'number') {
+    return { erreur: `expires_in_days doit être un nombre (reçu : ${JSON.stringify(valeur)})` };
+  }
+  const jours = valeur === undefined ? 15 : valeur;
+  if (!Number.isFinite(jours) || !Number.isInteger(jours) || jours < 1 || jours > 365) {
+    return { erreur: `expires_in_days doit être un entier entre 1 et 365 (reçu : ${JSON.stringify(valeur)})` };
+  }
+  return { jours };
+}
+
+/** Un corps JSON doit être un objet. `null` et `[]` sont du JSON valide, et n'ont rien à faire ici. */
+function corpsUtilisable(brut) {
+  return brut !== null && typeof brut === 'object' && !Array.isArray(brut);
+}
+
 // POST /create-gift-links — le service ne connaît pas WhatsApp, et n'appelle jamais Lovable.
 //
 // Corps attendu : { urls: string[], expires_in_days? }
@@ -312,6 +360,7 @@ function depuisArc(doc, repliUrl) {
 // AUTHENTIFICATION : un jeton PAR SERVICE dans l'en-tête `x-gift-service-token`, révocable un par un.
 // Sans lui, n'importe qui pourrait fabriquer des liens vers des articles premium — c'est la porte la
 // plus sensible du service.
+
 
 
 const env = (k: string) => Deno.env.get(k) ?? '';
@@ -366,9 +415,7 @@ Deno.serve(async (req) => {
   // gérée et l'appelant reçoit une erreur du runtime au lieu d'un refus qui s'explique.
   try {
     const brut = await req.json();
-    if (brut === null || typeof brut !== 'object' || Array.isArray(brut)) {
-      return json({ error: 'le corps doit être un objet JSON' }, 400);
-    }
+    if (!corpsUtilisable(brut)) return json({ error: 'le corps doit être un objet JSON' }, 400);
     corps = brut as Record<string, unknown>;
   } catch { return json({ error: 'corps JSON illisible' }, 400); }
 
@@ -382,12 +429,11 @@ Deno.serve(async (req) => {
   // L'ATTRIBUTION NE SE MET PAS ICI. Elle voyage dans la query string du lien qu'on diffuse —
   // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — parce qu'un lien est COMMUN à tous ses
   // destinataires et qu'une campagne posée sur lui écraserait celle de tous les autres.
-  const CONNUES = ['urls', 'expires_in_days', 'fake_body'];
-  const inconnues = Object.keys(corps).filter((c) => !CONNUES.includes(c));
+  const inconnues = clesInconnues(corps);
   if (inconnues.length > 0) {
     return json({
       error: `clé(s) non reconnue(s) : ${inconnues.join(', ')}`,
-      accepted_keys: CONNUES,
+      accepted_keys: CLES_ACCEPTEES,
       hint: inconnues.some((c) => c === 'channel' || c === 'campaign')
         ? "`channel` et `campaign` n'existent plus. Un lien est commun à tous ses destinataires : posez l'attribution dans la query string du lien diffusé (?s=…&at_medium=…&at_campaign=…&at_campaign_group=…), elle y est enregistrée lecture par lecture."
         : undefined,
@@ -402,10 +448,9 @@ Deno.serve(async (req) => {
   // LA DURÉE SE VALIDE AVANT D'ÉCRIRE QUOI QUE CE SOIT. Elle était lue APRÈS la mise en cache : un
   // `1e300` levait une exception une fois le contenu partagé déjà modifié. Et `-1`, `0`, `false` ou
   // `"abc"` devenaient silencieusement quinze jours — l'appelant croyait avoir demandé autre chose.
-  const jours = corps.expires_in_days === undefined ? 15 : Number(corps.expires_in_days);
-  if (!Number.isFinite(jours) || !Number.isInteger(jours) || jours < 1 || jours > 365) {
-    return json({ error: `expires_in_days doit être un entier entre 1 et 365 (reçu : ${JSON.stringify(corps.expires_in_days)})` }, 400);
-  }
+  const duree = dureeDemandee(corps.expires_in_days);
+  if (duree.erreur) return json({ error: duree.erreur }, 400);
+  const jours = duree.jours as number;
 
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 

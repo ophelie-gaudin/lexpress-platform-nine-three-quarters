@@ -289,7 +289,7 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 88 vérifications du schéma et 91 vérifications du traitement des articles.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 152 vérifications du schéma et 144 vérifications du traitement des articles.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
@@ -412,8 +412,11 @@ printf '%s' "$JETON" | pbcopy                            # macOS
 ```
 
 Le jeton part dans le presse-papiers sans s'afficher. Le coller dans le gestionnaire de secrets du
-service appelant, puis fermer le terminal. Il n'est plus retrouvable ensuite : la base n'en garde que
-l'empreinte, et c'est tout l'intérêt.
+service appelant.
+
+**Gardez le terminal ouvert jusqu'à l'étape 5** : elle a besoin de `$JETON`. Une fois la vérification
+passée, fermez-le. Le jeton n'est alors plus retrouvable : la base n'en garde que l'empreinte, et c'est
+tout l'intérêt.
 
 #### 5. Vérifier, avant de considérer que c'est fait
 
@@ -430,7 +433,19 @@ curl --silent -X POST \
 
 La réponse doit porter `"client": "newsletter-quotidienne"`. Un `401` signifie que l'empreinte
 enregistrée ne correspond pas au jeton transmis — le plus souvent parce que l'une des deux valeurs a
-été collée à la place de l'autre. Reprendre à l'étape 1 et révoquer la ligne fautive.
+été collée à la place de l'autre.
+
+**Dans ce cas, on remplace l'empreinte ; on ne recommence pas.** Révoquer ne libère pas le nom : la
+ligne reste, et `name` est unique. Réenregistrer le même service échouerait.
+
+```sql
+UPDATE public.api_clients
+   SET token_sha256 = 'collez ici la BONNE empreinte, celle de l''étape 2'
+ WHERE name = 'newsletter-quotidienne';
+```
+
+Puis reprendre l'étape 5. Le jeton transmis au service ne change pas — c'est l'empreinte en base qui
+était fausse.
 
 ### Révoquer
 
@@ -526,7 +541,7 @@ Ne pas supprimer un lien diffusé : poser `withdrawn_at` conserve la ligne et do
 - Déploiement et configuration distante à rendre reproductibles ; CI à ajouter selon l’hébergement Git retenu.
 - Aucun écran d’administration inclus : création via API, retrait et prolongation possibles en SQL.
 - Archivage/rétention, Piano et attribution entre campagnes à compléter.
-- Tests HTTP de la fonction et tests du frontend publié à compléter : les 179 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
+- Tests HTTP de la fonction et tests du frontend publié à compléter : les 296 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
 
 ## Provenance
 

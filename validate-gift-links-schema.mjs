@@ -393,10 +393,23 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
   check(motifs.join(' | ') === 'malformed digest | unknown token | revoked token',
     `les motifs de refus sont en anglais — reçus : ${motifs.join(' | ')}`);
 
-  // LE RENOMMAGE N'A RIEN PERDU. Les lignes de 006 et 007 sont toujours là, avec leurs compteurs.
+  // LE RENOMMAGE N'A RIEN PERDU — ET ON LE LUI FAIT TRAVERSER.
+  //
+  // RELEVÉ PAR UNE REVUE ADVERSE : ce cas lisait des données nées APRÈS la migration, puisque tout
+  // avait déjà été appliqué en tête de fichier. Un `DELETE FROM api_clients` glissé dans le 008
+  // laissait les 108 contrôles verts. On pose donc une ligne, on rejoue le 008, et on la relit.
+  await q(`INSERT INTO api_clients (name, token_sha256, calls, links_created)
+           VALUES ('temoin-du-renommage', repeat('a', 64), 7, 11)`);
+  await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
+  await db.exec(readFileSync('gift-links/supabase/009-attribution-par-envoi.sql', 'utf8'));
+  await db.exec(readFileSync('gift-links/supabase/011-ne-jamais-degrader.sql', 'utf8'));
+  const temoin = (await q(`SELECT calls, links_created, active FROM api_clients WHERE name = 'temoin-du-renommage'`))[0];
+  check(!!temoin && temoin.calls === 7 && temoin.links_created === 11 && temoin.active === true,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une ligne posée AVANT le renommage le traverse avec ses compteurs — ce cas lisait auparavant des données nées après, et n’aurait pas vu une migration qui vide la table');
+
   const b = (await q(`SELECT calls, links_created, active FROM api_clients WHERE name = 'service-b'`))[0];
   check(b.links_created === 3 && b.calls >= 1 && b.active === true,
-    'renommer a gardé les données : les compteurs du service-b ont survécu à ALTER ... RENAME');
+    'et les lignes plus anciennes aussi');
 
   // REJOUABLE. Les gardes du 008 existent parce que RENAME COLUMN n'accepte pas IF EXISTS : sans elles,
   // une base déjà migrée casserait au second passage.
@@ -494,9 +507,25 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
   check(vues.length > 0 && vues.every((v) => v.invoker === 'true'),
     `C’EST LA PROPRIÉTÉ QUI COMPTE : toute vue du schéma public lit avec les droits de son LECTEUR — sinon un GRANT distrait ouvrirait les tables derrière elle, RLS comprise. Trouvées : ${vues.map((v) => v.relname + '=' + v.invoker).join(', ')}`);
 
+  // RELEVÉ PAR UNE REVUE ADVERSE : seul `anon` était vérifié. Un GRANT à `authenticated` plus une
+  // politique permissive rendaient `articles` entièrement lisible, et les 108 contrôles passaient.
   for (const t of ['articles', 'gift_links', 'gift_link_opens', 'api_clients'])
-    check(!(await q('SELECT has_table_privilege($1, $2, $3) AS ok', ['anon', t, 'SELECT']))[0].ok,
-      `et ${t} reste fermée à anon : la lecture ne passe que par get_gift_article`);
+    for (const role of ['anon', 'authenticated'])
+      for (const droit of ['SELECT', 'INSERT', 'UPDATE', 'DELETE'])
+        check(!(await q('SELECT has_table_privilege($1, $2, $3) AS ok', [role, t, droit]))[0].ok,
+          `${t} reste fermée à ${role} en ${droit} : la lecture ne passe que par get_gift_article`);
+
+  // ET AUCUNE POLITIQUE N'EXISTE. La RLS sans politique est un refus par défaut ; en ajouter une
+  // rouvrirait la porte sans qu'un seul contrôle bronche. On exige donc le vide, pas « la RLS active ».
+  const politiques = await q(`SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public'`);
+  check(politiques.length === 0,
+    `C’EST LA PROPRIÉTÉ QUI COMPTE : AUCUNE politique RLS dans le schéma public — la RLS sans politique refuse tout, et une politique ajoutée « pour voir » ouvrirait les tables derrière le token. Trouvées : ${politiques.map((p) => p.tablename + '/' + p.policyname).join(', ')}`);
+
+  // ET UNE SEULE FONCTION EST OUVERTE À anon.
+  const ouvertes = await q(`SELECT p.proname FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'public' AND has_function_privilege('anon', p.oid, 'EXECUTE') ORDER BY 1`);
+  check(ouvertes.length === 1 && ouvertes[0].proname === 'get_gift_article',
+    `une seule fonction exécutable par anon, et c’est la lecture d’un article offert. Trouvées : ${ouvertes.map((o) => o.proname).join(', ')}`);
 
   // ET IL SE REJOUE SANS SE DÉFAIRE : l'option vit dans la définition, pas à côté d'elle.
   await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));

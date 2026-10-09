@@ -239,9 +239,13 @@ const PAGE = `<html><head>
 // déployable est reconstruit et comparé.
 {
   const { readFileSync } = await import('node:fs');
+  // IMPORTER CE MODULE N'ÉCRIT PLUS RIEN (8 oct. 2026). Il réécrivait le fichier à l'import, et la
+  // comparaison ci-dessous constatait une égalité qu'elle venait de fabriquer : elle ne pouvait pas
+  // échouer. La chaîne de tests ne régénère plus non plus — sinon elle masquerait le même défaut d'un
+  // cran plus haut. Un oubli de `npm run build` doit se voir ICI, pas en production.
   const { build, CIBLE } = await import('./build-gift-links-function.mjs');
   check(readFileSync(CIBLE, 'utf8') === build(),
-    'C’EST LA PROPRIÉTÉ QUI COMPTE : le fichier déployable correspond aux sources — régénérer par `node build-gift-links-function.mjs`');
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le fichier déployable correspond aux sources — régénérer par `npm run build`. On a déjà payé le prix d’une copie divergente avec le validateur embarqué du workflow n8n : source corrigée, copie déployée inchangée, prospect sans réponse');
 
   const b = readFileSync(CIBLE, 'utf8');
   check(!/^import\s+\{[^}]*\}\s+from\s+'\./m.test(b), 'aucun import local ne subsiste : le fichier se suffit à lui-même');
@@ -332,13 +336,36 @@ const PAGE = `<html><head>
   check(!/p_channel/.test(b) && !/p_campaign\b/.test(b),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : la fonction n’envoie plus ni canal ni campagne — le lien est commun à tous ses destinataires, lui en coller une attribuait toutes les lectures à la dernière déclarée');
 
-  // UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
+  // ON EXÉCUTE, ON NE LIT PLUS (8 oct. 2026). Ces règles vivaient dans un fichier que seul Deno peut
+  // lancer : les cas cherchaient des chaînes. Une revue adverse a désactivé le refus d'authentification
+  // sans qu'une assertion bronche. Elles vivent maintenant dans un module que Node appelle pour de vrai.
+  {
+    const { clesInconnues, dureeDemandee, corpsUtilisable, CLES_ACCEPTEES } =
+      await import('./gift-links/functions/_shared/corps.mjs');
+
+    check(clesInconnues({ urls: [], channel: 'wa', campaign: 'x' }).join() === 'channel,campaign',
+      'C’EST LA PROPRIÉTÉ QUI COMPTE : les clés inconnues sont NOMMÉES — ignorées en silence, un appelant croit attribuer ses liens et ne fait rien');
+    check(clesInconnues({ urls: [], expires_in_days: 1, fake_body: true }).length === 0,
+      'et les trois clés acceptées passent');
+    check(CLES_ACCEPTEES.join() === 'urls,expires_in_days,fake_body', 'la liste est close');
+
+    check(dureeDemandee(undefined).jours === 15, 'sans durée, quinze jours');
+    for (const mauvais of [0, -1, 'abc', 1e300, 366, 1.5, null, true, false, '30', [], {}])
+      check(!!dureeDemandee(mauvais).erreur, `durée refusée : ${JSON.stringify(mauvais)}`);
+    check(/doit être un nombre/.test(dureeDemandee(true).erreur),
+      'C’EST LA PROPRIÉTÉ QUI COMPTE : on exige un NOMBRE, pas une valeur qui s’y convertit — `Number(true)` vaut 1, et `expires_in_days: true` serait devenu un jour en silence');
+    check(dureeDemandee(30).jours === 30 && dureeDemandee(365).jours === 365, 'et les durées valides passent');
+    check(/reçu : 0/.test(dureeDemandee(0).erreur),
+      'le refus RÉPÈTE ce qu’il a reçu : `-1` devenait quinze jours en silence, et l’appelant croyait avoir demandé autre chose');
+
+    for (const pas of [null, [], 'texte', 42]) check(!corpsUtilisable(pas), `corps refusé : ${JSON.stringify(pas)}`);
+    check(corpsUtilisable({ urls: [] }), 'un objet passe');
+  }
+
   check(/clé\(s\) non reconnue\(s\)/.test(b) && /accepted_keys/.test(b),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : une clé inconnue reçoit un 400 qui la NOMME — ignorée en silence, un appelant croirait attribuer ses liens, ou aurait mal tapé `expires_in_days` et perdrait quinze jours sans un mot');
-  const connues = (b.match(/const CONNUES = \[([^\]]*)\]/) || [])[1] || '';
-  check(/'urls'/.test(connues) && /'expires_in_days'/.test(connues) && /'fake_body'/.test(connues)
-        && !/'channel'/.test(connues) && !/'campaign'/.test(connues),
-    'et la liste des clés acceptées est close : urls, expires_in_days, fake_body — ni channel ni campaign');
+  check(/CLES_ACCEPTEES/.test(b),
+    'et le fichier déployable utilise bien la liste du module, pas une copie qui pourrait diverger');
   check(/channel.*campaign.*n'existent plus|n'existent plus/.test(b),
     'le refus dit où mettre l’attribution, au lieu de laisser l’appelant deviner');
 

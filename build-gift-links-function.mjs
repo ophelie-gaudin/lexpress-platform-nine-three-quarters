@@ -9,6 +9,7 @@ export const SOURCES = [
   'gift-links/functions/_shared/apercu.mjs',
   'gift-links/functions/_shared/arc-id.mjs',
   'gift-links/functions/_shared/arc.mjs',
+  'gift-links/functions/_shared/corps.mjs',
 ];
 export const ENTREE = 'gift-links/functions/create-gift-links/index.ts';
 export const CIBLE = 'gift-links/functions/create-gift-links/index.bundle.ts';
@@ -30,6 +31,15 @@ export function build() {
   return `${entete}${imports.join('\n')}\n\n${modules}\n\n${entree.replace(/^import .*$\n?/gm, '')}\n`;
 }
 
-const sortie = build();
-writeFileSync(CIBLE, sortie);
-console.log(`${CIBLE} engendré (${sortie.length} caractères).`);
+// ── CE FICHIER N'ÉCRIT QUE LORSQU'ON LE LANCE (8 oct. 2026).
+//
+// RELEVÉ PAR UNE REVUE ADVERSE. Il écrivait à l'import. Le test qui vérifiait « le fichier déployable
+// correspond aux sources » importait ce module, qui RÉÉCRIVAIT le fichier, puis comparait — une égalité
+// qu'il venait de fabriquer. Le contrôle ne pouvait pas échouer, et un oubli de génération avant
+// déploiement serait passé inaperçu. C'est exactement le genre de panne qu'on avait déjà payée avec le
+// validateur embarqué du workflow n8n.
+if (process.argv[1] && process.argv[1].endsWith('build-gift-links-function.mjs')) {
+  const sortie = build();
+  writeFileSync(CIBLE, sortie);
+  console.log(`${CIBLE} engendré (${sortie.length} caractères).`);
+}

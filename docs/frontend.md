@@ -21,7 +21,19 @@ Le frontend ne doit jamais recevoir de jeton de service, `ARC_TOKEN` ou une clé
 
 Un réessai relance réellement la requête. Ne pas transformer une erreur technique en retrait éditorial. Ne pas inventer de signature ou de corps manquant.
 
-Le corps comporte du HTML issu d’Arc. Appliquer un assainissement avec les seules balises `b`, `strong`, `i`, `em`, `a`, `br`, `p`, des attributs autorisés explicitement et des URLs de liens sûres. Ouvrir les liens éditoriaux dans un nouvel onglet avec les protections correspondantes. L’implémentation de cet assainissement reste à vérifier dans les sources Lovable.
+Le corps comporte du HTML issu d’Arc. Appliquer un assainissement, avec une liste blanche qui doit **inclure ce que le service produit réellement** :
+
+| Balise | D’où elle vient |
+| --- | --- |
+| `b`, `strong`, `i`, `em`, `a`, `br`, `p` | le corps d’article |
+| `blockquote`, `cite` | les citations (`quote`) |
+| `figure`, `img`, `figcaption` | les images du corps |
+
+**Omettre les cinq dernières vide les articles.** Un article composé d’une seule photo légendée est annoncé « corps complet » par le service, et une page conforme à une liste trop étroite afficherait une page blanche. Le défaut existait dans ce document jusqu’au 8 octobre 2026.
+
+Ouvrir les liens éditoriaux dans un nouvel onglet avec les protections correspondantes.
+
+**Le service assainit déjà à la source** — `<script>`, `<iframe>`, `<style>`, `<object>`, `<embed>`, `<form>`, les attributs `on*` et les URLs `javascript:` / `data:` / `vbscript:` sont retirés avant d’être servis. Gardez votre liste blanche quand même : jusqu’au 8 octobre 2026 ce document promettait cette protection sans que le service la tienne. Deux barrières valent mieux qu’une.
 
 ## Abonnement et attribution
 

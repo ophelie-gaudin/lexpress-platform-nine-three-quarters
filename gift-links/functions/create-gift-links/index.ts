@@ -10,6 +10,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { trierUrls } from '../_shared/arc-id.mjs';
 import { chargerArticle, corpsDeDemonstration } from '../_shared/arc.mjs';
+import { CLES_ACCEPTEES, clesInconnues, corpsUtilisable, dureeDemandee } from '../_shared/corps.mjs';
 
 const env = (k: string) => Deno.env.get(k) ?? '';
 
@@ -63,9 +64,7 @@ Deno.serve(async (req) => {
   // gérée et l'appelant reçoit une erreur du runtime au lieu d'un refus qui s'explique.
   try {
     const brut = await req.json();
-    if (brut === null || typeof brut !== 'object' || Array.isArray(brut)) {
-      return json({ error: 'le corps doit être un objet JSON' }, 400);
-    }
+    if (!corpsUtilisable(brut)) return json({ error: 'le corps doit être un objet JSON' }, 400);
     corps = brut as Record<string, unknown>;
   } catch { return json({ error: 'corps JSON illisible' }, 400); }
 
@@ -79,12 +78,11 @@ Deno.serve(async (req) => {
   // L'ATTRIBUTION NE SE MET PAS ICI. Elle voyage dans la query string du lien qu'on diffuse —
   // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — parce qu'un lien est COMMUN à tous ses
   // destinataires et qu'une campagne posée sur lui écraserait celle de tous les autres.
-  const CONNUES = ['urls', 'expires_in_days', 'fake_body'];
-  const inconnues = Object.keys(corps).filter((c) => !CONNUES.includes(c));
+  const inconnues = clesInconnues(corps);
   if (inconnues.length > 0) {
     return json({
       error: `clé(s) non reconnue(s) : ${inconnues.join(', ')}`,
-      accepted_keys: CONNUES,
+      accepted_keys: CLES_ACCEPTEES,
       hint: inconnues.some((c) => c === 'channel' || c === 'campaign')
         ? "`channel` et `campaign` n'existent plus. Un lien est commun à tous ses destinataires : posez l'attribution dans la query string du lien diffusé (?s=…&at_medium=…&at_campaign=…&at_campaign_group=…), elle y est enregistrée lecture par lecture."
         : undefined,
@@ -99,10 +97,9 @@ Deno.serve(async (req) => {
   // LA DURÉE SE VALIDE AVANT D'ÉCRIRE QUOI QUE CE SOIT. Elle était lue APRÈS la mise en cache : un
   // `1e300` levait une exception une fois le contenu partagé déjà modifié. Et `-1`, `0`, `false` ou
   // `"abc"` devenaient silencieusement quinze jours — l'appelant croyait avoir demandé autre chose.
-  const jours = corps.expires_in_days === undefined ? 15 : Number(corps.expires_in_days);
-  if (!Number.isFinite(jours) || !Number.isInteger(jours) || jours < 1 || jours > 365) {
-    return json({ error: `expires_in_days doit être un entier entre 1 et 365 (reçu : ${JSON.stringify(corps.expires_in_days)})` }, 400);
-  }
+  const duree = dureeDemandee(corps.expires_in_days);
+  if (duree.erreur) return json({ error: duree.erreur }, 400);
+  const jours = duree.jours as number;
 
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 
