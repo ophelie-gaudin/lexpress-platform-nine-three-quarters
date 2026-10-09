@@ -151,7 +151,7 @@ Avant l’appel :
 | « La DGSE investit dans l’IA… » | Lien existant avec le token `11111111111111111111111111111111`, valable jusqu’au 10 octobre 2026 à 13 h UTC |
 | « En 2027, faut-il mentir pour survivre… » | Aucun lien existant |
 
-Renseigner `GIFT_TOKEN` dans l’environnement de l’appelant serveur avec le jeton de service obtenu, puis envoyer :
+Remplacer `VOTRE_JETON` par le jeton de service obtenu, puis envoyer :
 
 ```sh
 curl --silent -X POST \
