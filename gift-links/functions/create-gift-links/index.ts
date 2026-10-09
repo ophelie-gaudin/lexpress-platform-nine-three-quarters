@@ -47,14 +47,27 @@ Deno.serve(async (req) => {
   // le temps que le job nocturne n8n passe sur son propre jeton — c'est fait, prouvé par 21 liens
   // attribués. Un secret qui ouvre la porte sans nommer personne est exactement ce qu'on voulait
   // supprimer : il rendait toute révocation collective.
-  const { data: clients } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  //
+  // ET UNE PANNE N'EST PAS UN REFUS. Si la base ne répond pas, l'appelant recevait le même 401 qu'un
+  // jeton révoqué — et la documentation l'envoyait réparer des jetons parfaitement valides. Un 503 dit
+  // la vérité : ce n'est pas vous, revenez.
+  const { data: clients, error: erreurAuth } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  if (erreurAuth) return json({ error: 'vérification indisponible, réessayez' }, 503);
   const client = Array.isArray(clients) ? clients[0] : clients;
   if (!client?.ok) return json({ error: 'non autorisé' }, 401);
   const clientId: string = client.client_id;
   const clientName: string = client.name;
 
   let corps: Record<string, unknown>;
-  try { corps = await req.json(); } catch { return json({ error: 'corps JSON illisible' }, 400); }
+  // `null` est un JSON valide : sans ce garde, la lecture des clés plus bas lève une exception non
+  // gérée et l'appelant reçoit une erreur du runtime au lieu d'un refus qui s'explique.
+  try {
+    const brut = await req.json();
+    if (brut === null || typeof brut !== 'object' || Array.isArray(brut)) {
+      return json({ error: 'le corps doit être un objet JSON' }, 400);
+    }
+    corps = brut as Record<string, unknown>;
+  } catch { return json({ error: 'corps JSON illisible' }, 400); }
 
   // ── UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
   //
@@ -83,6 +96,14 @@ Deno.serve(async (req) => {
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);
   }
 
+  // LA DURÉE SE VALIDE AVANT D'ÉCRIRE QUOI QUE CE SOIT. Elle était lue APRÈS la mise en cache : un
+  // `1e300` levait une exception une fois le contenu partagé déjà modifié. Et `-1`, `0`, `false` ou
+  // `"abc"` devenaient silencieusement quinze jours — l'appelant croyait avoir demandé autre chose.
+  const jours = corps.expires_in_days === undefined ? 15 : Number(corps.expires_in_days);
+  if (!Number.isFinite(jours) || !Number.isInteger(jours) || jours < 1 || jours > 365) {
+    return json({ error: `expires_in_days doit être un entier entre 1 et 365 (reçu : ${JSON.stringify(corps.expires_in_days)})` }, 400);
+  }
+
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
@@ -101,28 +122,34 @@ Deno.serve(async (req) => {
       continue;
     }
     const c = contenu as Record<string, unknown>;
-    // Corps de démonstration : sur demande explicite, jamais par défaut, et jamais par-dessus un vrai corps.
-    if (corps.fake_body === true && !c.body) c.body = corpsDeDemonstration(c);
+    // Corps de démonstration : sur demande explicite, jamais par défaut. `is_demo` voyage avec la ligne
+    // pour que la base refuse de le poser sur un article qu'elle a déjà — ce que cette fonction ne peut
+    // pas savoir, puisqu'elle ne voit que le chargement courant.
+    const demo = corps.fake_body === true && !c.body;
+    if (demo) c.body = corpsDeDemonstration(c);
     aCacher.push({
       arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
-      fetched_at: new Date().toISOString(),
+      is_demo: demo,
     });
     prets.push({ ...a, source: c.source, body: c.body });
   }
 
+  // LE CACHE PASSE PAR LA BASE, PAS PAR UN UPSERT. Un `upsert` écrase : Arc indisponible, et le corps
+  // complet d'un lien DÉJÀ diffusé devenait un aperçu. `cache_articles` ne dégrade aucun champ, refuse
+  // qu'une démonstration recouvre un vrai corps, et dédoublonne un lot qui contient deux fois le même
+  // article — ce que PostgreSQL rejetait en bloc (21000).
   if (aCacher.length > 0) {
-    const { error } = await db.from('articles').upsert(aCacher, { onConflict: 'arc_id' });
+    const { error } = await db.rpc('cache_articles', { p_articles: aCacher });
     if (error) return json({ error: `mise en cache refusée : ${error.message}`, rejected: rejets }, 500);
   }
 
   if (prets.length === 0) return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
 
-  const jours = Number(corps.expires_in_days ?? 15);
   const { data, error } = await db.rpc('create_gift_links', {
-    p_arc_ids: prets.map((p) => p.arcId),
+    p_arc_ids: [...new Set(prets.map((p) => p.arcId as string))],
     // NI `channel` NI `campaign` (8 oct. 2026). Le lien est COMMUN à tous ses destinataires : lui coller
     // une campagne attribuait toutes les lectures à la dernière déclarée, y compris les plus anciennes.
     // L'attribution appartient à l'envoi et voyage dans la query string du lien diffusé —

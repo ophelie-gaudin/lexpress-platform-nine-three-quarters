@@ -11,12 +11,24 @@ const ANCIEN_FORMAT = /_\d+\.html?$/i;
  * Rend { arcId } ou { erreur } — jamais null silencieux : un appelant qui fournit une URL d'un autre
  * format doit l'apprendre, pas recevoir deux liens au lieu de trois.
  */
+/** Les deux seuls hôtes dont le serveur accepte d'aller chercher une page. */
+export const HOTES = new Set(['www.lexpress.fr', 'lexpress.fr']);
+
 export function arcIdDepuisUrl(url) {
   if (typeof url !== 'string' || url.trim() === '') return { erreur: 'url vide' };
   let u;
   try { u = new URL(url.trim()); } catch { return { erreur: `url illisible : ${url}` }; }
 
-  if (!/(^|\.)lexpress\.fr$/i.test(u.hostname)) return { erreur: `domaine inattendu : ${u.hostname}` };
+  // LE SERVEUR IRA CHERCHER CETTE URL LUI-MÊME. Elle décide donc d'une requête sortante, et doit être
+  // tenue plus court qu'un lien que le lecteur suivra dans un corps d'article — ceux-là pointent où ils
+  // veulent, et c'est très bien.
+  //
+  // RELEVÉ PAR UNE REVUE ADVERSE (8 oct. 2026). Le filtre acceptait tout sous-domaine, tout port et
+  // tout protocole : `http://interne.lexpress.fr:8443/…` passait, et faisait appeler une machine
+  // interne depuis le runtime. Deux hôtes, https, aucun port.
+  if (u.protocol !== 'https:') return { erreur: `protocole refusé : ${u.protocol}` };
+  if (u.port !== '') return { erreur: `port refusé : ${u.port}` };
+  if (!HOTES.has(u.hostname.toLowerCase())) return { erreur: `domaine inattendu : ${u.hostname}` };
 
   // L'ancien format ne porte pas d'identifiant Arc. Ces articles sont déjà écartés par la règle des
   // 30 jours, mais un appelant qui en fournirait un doit recevoir un refus explicite, pas un silence.

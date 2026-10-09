@@ -166,6 +166,58 @@ const PAGE = `<html><head>
   check(/Lorem ipsum/.test(brut), 'le corps est du texte de remplissage, reconnaissable au premier coup d’œil');
 }
 
+// ── CE QUI NE DOIT JAMAIS ATTEINDRE LA PAGE (8 oct. 2026).
+//
+// RELEVÉ PAR UNE REVUE ADVERSE. `LOVABLE.md` promettait que `<script>`, `<iframe>` et les attributs
+// `on*` n'arriveraient jamais. C'était faux : le HTML des éléments `text` passait tel quel. Ces cas
+// rendent la promesse vraie, et la garderont vraie.
+{
+  const { rendreElement } = await import('./gift-links/functions/_shared/arc.mjs');
+  const rendu = (html) => rendreElement({ type: 'text', content: html });
+
+  check(!/onerror/i.test(rendu('<img src=x onerror=alert(1)>')),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un attribut `on*` ne traverse pas — la page le poserait dans le DOM, et le code d’un article piégé s’exécuterait chez le lecteur');
+  check(!/<script/i.test(rendu('<script>vol()</script><p>Vrai texte.</p>'))
+        && /Vrai texte/.test(rendu('<script>vol()</script><p>Vrai texte.</p>')),
+    'un `<script>` est retiré, et le texte légitime qui l’entoure reste');
+  for (const [nom, html] of [['iframe', '<iframe src="https://ailleurs"></iframe><p>Suite.</p>'],
+                             ['style', '<style>body{display:none}</style><p>Suite.</p>'],
+                             ['object', '<object data="x"></object><p>Suite.</p>']])
+    check(!new RegExp('<' + nom, 'i').test(rendu(html)) && /Suite/.test(rendu(html)),
+      `un \`<${nom}>\` est retiré sans emporter le reste`);
+  check(!/javascript:/i.test(rendu('<a href="javascript:vol()">lien</a>')),
+    'une URL `javascript:` est retirée de son attribut');
+
+  // ET LE CORPS LÉGITIME SURVIT. Un article porte du gras, des intertitres, et des liens qui sortent
+  // du site — vers un PDF de la Ville de Paris, par exemple. Les écarter viderait les articles.
+  const vrai = rendu('<p><b>Gras</b> et <a href="https://cdn.paris.fr/x.pdf">un lien externe</a></p>');
+  check(/<b>Gras<\/b>/.test(vrai) && /cdn\.paris\.fr/.test(vrai),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le gras et les liens vers l’extérieur passent intacts — assainir n’est pas appauvrir, un article cite ailleurs');
+
+  // LES ESPACES QUI SE DÉGUISENT. `&nbsp;` était traité, pas `&#xA0;` ni l’espace de largeur nulle.
+  const { sansSubstance } = await import('./gift-links/functions/_shared/arc.mjs');
+  for (const vide of ['<p>&#xA0;</p>', '<p>&#32;</p>', '<p>&#8203;</p>', '<p>&#x200B;</p>'])
+    check(sansSubstance(vide), `« ${vide} » ne fait pas un corps, quelle que soit la façon d’écrire l’espace`);
+  check(!sansSubstance('<p>Du vrai texte.</p>'), 'et du texte reste du texte');
+}
+
+// ── LE SERVEUR N'IRA CHERCHER QUE CE QU'ON LUI AUTORISE (8 oct. 2026).
+{
+  const { arcIdDepuisUrl } = await import('./gift-links/functions/_shared/arc-id.mjs');
+  const ok = (u) => !!arcIdDepuisUrl(u).arcId;
+  const ARTICLE = '/politique/x-LQBW5JK75BDOBJHRA76NRFPJFY';
+
+  check(ok('https://www.lexpress.fr' + ARTICLE) && ok('https://lexpress.fr' + ARTICLE),
+    'les deux hôtes légitimes passent');
+  check(!ok('http://www.lexpress.fr' + ARTICLE), 'http est refusé : la réponse serait lisible en chemin');
+  check(!ok('https://www.lexpress.fr:8443' + ARTICLE),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un port est refusé — l’URL décide d’une requête SORTANTE du serveur, et un port arbitraire la dirige vers un service interne');
+  check(!ok('https://interne.lexpress.fr' + ARTICLE),
+    'et un sous-domaine quelconque aussi : le filtre nomme deux hôtes, il n’accepte pas une famille');
+  check(!ok('https://lexpress.fr.attaquant.net' + ARTICLE),
+    'un domaine qui RESSEMBLE au bon est refusé');
+}
+
 // ── LE CORPS DE DÉMONSTRATION. Sur demande explicite, et reconnaissable au premier coup d'œil.
 {
   const { corpsDeDemonstration } = await import('./gift-links/functions/_shared/arc.mjs');
@@ -289,6 +341,20 @@ const PAGE = `<html><head>
     'et la liste des clés acceptées est close : urls, expires_in_days, fake_body — ni channel ni campaign');
   check(/channel.*campaign.*n'existent plus|n'existent plus/.test(b),
     'le refus dit où mettre l’attribution, au lieu de laisser l’appelant deviner');
+
+  // 011 : ce qui abîmait un lien DÉJÀ diffusé. Relevé par une revue adverse le 8 oct. 2026.
+  check(/rpc\('cache_articles'/.test(b) && !/from\('articles'\)\.upsert/.test(b),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le cache passe par la base, pas par un upsert — un upsert écrase, et Arc indisponible transformait en aperçu le corps complet d’un lien déjà entre les mains de lecteurs');
+  check(/is_demo: demo/.test(b),
+    'et la démonstration s’annonce comme telle : seule la base sait si l’article a déjà un vrai corps');
+  check(/new Set\(prets\.map/.test(b),
+    'les identifiants sont dédoublonnés : deux URLs du même article faisaient échouer le lot entier');
+  check(/Number\.isInteger\(jours\)/.test(b) && b.indexOf('expires_in_days doit être') < b.indexOf("rpc('cache_articles'"),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la durée est validée AVANT toute écriture — elle l’était après, et un nombre absurde levait une exception une fois le contenu partagé déjà modifié');
+  check(/erreurAuth/.test(b) && /503/.test(b),
+    'une panne de la base rend 503, pas 401 : un jeton valide ne doit pas être accusé quand c’est le service qui tombe');
+  check(/le corps doit être un objet JSON/.test(b),
+    'et un corps `null`, JSON parfaitement valide, reçoit un refus au lieu d’une exception du runtime');
 }
 
 

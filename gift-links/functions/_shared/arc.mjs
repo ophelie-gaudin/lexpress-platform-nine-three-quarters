@@ -6,6 +6,7 @@
 // Le second chemin reste utile APRÈS la mise en service : si Arc tombe, on sert un aperçu réel plutôt
 // que rien. L'appelant ne voit pas la différence dans la forme de la réponse, seulement dans `body`.
 import { apercuDepuisHtml } from './apercu.mjs';
+import { HOTES } from './arc-id.mjs';
 
 const UA = 'LExpress-GiftLinks/1 (+contenu offert WhatsApp)';
 
@@ -32,6 +33,14 @@ export async function chargerArticle(article, conf = {}) {
 
   const r = await f(article.canonicalUrl, { headers: { 'User-Agent': UA } });
   if (!r || !r.ok) return { erreur: `page injoignable (${r ? r.status : 'sans réponse'})` };
+  // UNE REDIRECTION PEUT SORTIR DU DOMAINE. L'URL d'entrée est filtrée, pas sa destination finale :
+  // une page de lexpress.fr qui renverrait ailleurs ferait lire au serveur ce qu'il n'a pas accepté
+  // d'aller chercher. On regarde où l'on a atterri, pas seulement où l'on allait.
+  if (typeof r.url === 'string' && r.url !== '') {
+    let hote;
+    try { hote = new URL(r.url).hostname.toLowerCase(); } catch { hote = null; }
+    if (hote && !HOTES.has(hote)) return { erreur: `redirection hors domaine : ${hote}` };
+  }
   const apercu = apercuDepuisHtml(await r.text(), article.canonicalUrl);
   if (apercu.erreur) return apercu;
   return { ...apercu, source: 'page-publique' };
@@ -76,10 +85,36 @@ const texteDe = (liste) => (Array.isArray(liste) ? liste : [])
   .filter((x) => x?.type === 'text' && typeof x.content === 'string')
   .map((x) => x.content.trim()).filter((x) => x !== '').join(' ');
 
+// CE QUI NE DOIT JAMAIS ATTEINDRE LA PAGE (8 oct. 2026).
+//
+// RELEVÉ PAR UNE REVUE ADVERSE. Le contrat de la page affirmait que `<script>`, `<iframe>`, `<style>`
+// et les attributs `on*` « n'arriveront jamais ». C'était faux : le HTML des éléments `text` passait
+// tel quel. Un `<img src=x onerror=…>` dans un article Arc traversait tout le service.
+//
+// LA PAGE A SA PROPRE LISTE BLANCHE, et c'est bien — mais une promesse écrite dans un contrat doit être
+// tenue par celui qui l'écrit. Deux barrières valent mieux qu'une, et personne ne sait à l'avance
+// laquelle cédera.
+//
+// ON RETIRE, ON N'ÉCHAPPE PAS. Échapper rendrait les balises visibles au lecteur ; le corps légitime en
+// porte — du gras, des liens, des intertitres — et doit continuer de s'afficher.
+const DANGEREUX = /<\s*(script|iframe|style|object|embed|form|link|meta|base)\b[\s\S]*?(<\s*\/\s*\1\s*>|$)/gi;
+const BALISE_SEULE = /<\s*\/?\s*(script|iframe|style|object|embed|form|link|meta|base)\b[^>]*>/gi;
+const ATTRIBUT_ON = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const URL_ACTIVE = /\s+(href|src|xlink:href)\s*=\s*(?:"\s*(?:javascript|data|vbscript):[^"]*"|'\s*(?:javascript|data|vbscript):[^']*'|\s*(?:javascript|data|vbscript):[^\s>]*)/gi;
+
+export function assainir(html) {
+  if (typeof html !== 'string') return '';
+  return html
+    .replace(DANGEREUX, '')
+    .replace(BALISE_SEULE, '')
+    .replace(ATTRIBUT_ON, '')
+    .replace(URL_ACTIVE, '');
+}
+
 export function rendreElement(e) {
   if (!e || typeof e !== 'object') return '';
 
-  if (e.type === 'text') return typeof e.content === 'string' ? e.content.trim() : '';
+  if (e.type === 'text') return typeof e.content === 'string' ? assainir(e.content).trim() : '';
 
   if (e.type === 'quote') {
     // La citation porte ses propres content_elements, et `citation` pour l'attribution — vide le plus
@@ -87,7 +122,7 @@ export function rendreElement(e) {
     const propos = texteDe(e.content_elements);
     if (propos === '') return '';
     const signature = typeof e.citation?.content === 'string' ? sansBalises(e.citation.content) : '';
-    return '<blockquote>' + propos + (signature ? '<cite>' + echapper(signature) + '</cite>' : '') + '</blockquote>';
+    return '<blockquote>' + assainir(propos) + (signature ? '<cite>' + echapper(signature) + '</cite>' : '') + '</blockquote>';
   }
 
   if (e.type === 'image') {
@@ -100,7 +135,7 @@ export function rendreElement(e) {
       .find((x) => typeof x === 'string' && x.trim() !== '') ?? '';
     const alt = sansBalises(legende) || 'Illustration de l\'article';
     return '<figure><img src="' + echapper(url) + '" alt="' + echapper(alt) + '" loading="lazy">'
-      + (legende ? '<figcaption>' + legende + '</figcaption>' : '') + '</figure>';
+      + (legende ? '<figcaption>' + assainir(legende) + '</figcaption>' : '') + '</figure>';
   }
 
   return '';
@@ -117,7 +152,16 @@ export function rendreElement(e) {
 export function sansSubstance(html) {
   if (typeof html !== 'string' || html.trim() === '') return true;
   if (/<img\b/i.test(html)) return false;
-  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').trim() === '';
+  // LES ESPACES SE DÉGUISENT. `&nbsp;` et `&#160;` étaient traités, mais pas `&#xA0;`, `&#32;` ni
+  // `&#8203;` — l'espace de largeur nulle. Un article composé de ces seules entités passait pour
+  // complet. On décode toute entité numérique et on regarde ce qui reste.
+  const decode = (s) => s
+    .replace(/&(nbsp|ensp|emsp|thinsp|zwnj|zwj|shy);/gi, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
+  // \u200B à \u200D : largeurs nulles. \uFEFF : marque d'ordre d'octets. Invisibles, donc sans substance.
+  return decode(html.replace(/<[^>]*>/g, ' '))
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').trim() === '';
 }
 
 /** Lecture d'un document Arc. Le corps est la concaténation des éléments de texte de content_elements. */

@@ -20,6 +20,7 @@ await db.exec(readFileSync('gift-links/supabase/007-attribution-liens.sql', 'utf
 await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/009-attribution-par-envoi.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/011-ne-jamais-degrader.sql', 'utf8'));
 
 const q = async (sql, params) => (await db.query(sql, params)).rows;
 
@@ -504,6 +505,81 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
     FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
     WHERE ns.nspname = 'public' AND c.relname = 'gift_links_by_client'`);
   check(encore[0].invoker === 'true', 'le 010 se rejoue sans perdre son option');
+}
+
+
+// ── 011 : ne jamais dégrader un lien déjà diffusé.
+//
+// RELEVÉ PAR UNE REVUE ADVERSE le 8 oct. 2026. Les deux défauts touchaient des liens DÉJÀ entre les
+// mains de lecteurs — la catégorie la plus coûteuse, parce qu'on ne peut pas les rappeler.
+{
+  // Les blocs précédents ont rejoué 008 puis 009 ; le CREATE OR REPLACE de 009 a repris la main sur
+  // `create_gift_links`. Migrations en avant seulement : on rejoue la dernière.
+  await db.exec(readFileSync('gift-links/supabase/011-ne-jamais-degrader.sql', 'utf8'));
+
+  const cacher = (lignes) => q('SELECT cache_articles($1::jsonb) AS n', [JSON.stringify(lignes)]);
+  const lire = async (arc) => (await q('SELECT * FROM articles WHERE arc_id = $1', [arc]))[0];
+
+  await cacher([{ arc_id: 'DEGRADE000000000000000001', canonical_url: 'https://x/d', title: 'Complet',
+                  standfirst: 'Le vrai chapeau.', image_url: 'https://img/d.jpg',
+                  body: '<p>Les huit mille caractères de l’article réel.</p>', section: 'Monde',
+                  author: 'Jane Doe', published_at: '2026-10-01T00:00:00Z', is_demo: false }]);
+  check((await lire('DEGRADE000000000000000001')).body.includes('article réel'), 'le corps complet est en cache');
+
+  // ARC TOMBE. Le repli public rend un aperçu : titre, chapeau, mais PAS de corps.
+  await cacher([{ arc_id: 'DEGRADE000000000000000001', canonical_url: 'https://x/d', title: 'Complet',
+                  standfirst: '', image_url: null, body: null, section: null, author: null,
+                  published_at: null, is_demo: false }]);
+  const apresRepli = await lire('DEGRADE000000000000000001');
+  check(apresRepli.body.includes('article réel'),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un repli sans corps n’efface pas le corps déjà en cache — le lien est DÉJÀ diffusé, et son lecteur verrait un teaser à la place de l’article promis');
+  check(apresRepli.standfirst === 'Le vrai chapeau.' && apresRepli.image_url === 'https://img/d.jpg'
+        && apresRepli.author === 'Jane Doe',
+    'et la règle vaut pour tous les champs : un repli appauvri ne remplace rien de ce qu’Arc avait donné');
+
+  // fake_body SUR UN ARTICLE QU'ON A DÉJÀ. C'est le cas que « jamais par-dessus un vrai corps » ratait.
+  await cacher([{ arc_id: 'DEGRADE000000000000000001', canonical_url: 'https://x/d', title: 'Complet',
+                  body: '⚠️ TEXTE DE DÉMONSTRATION — ce n’est pas l’article réel.', is_demo: true }]);
+  check((await lire('DEGRADE000000000000000001')).body.includes('article réel'),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une démonstration ne recouvre JAMAIS un vrai corps — elle serait servie comme du journalisme de L’Express sur un lien qui circule');
+
+  // Mais sur un article qu'on n'a pas, elle a toute sa place.
+  await cacher([{ arc_id: 'DEGRADE000000000000000002', canonical_url: 'https://x/e', title: 'Sans corps',
+                  body: '⚠️ TEXTE DE DÉMONSTRATION — ce n’est pas l’article réel.', is_demo: true }]);
+  check((await lire('DEGRADE000000000000000002')).body.includes('DÉMONSTRATION'),
+    'sur un article sans corps, la démonstration remplit son office');
+
+  // UN LOT QUI SE CONTREDIT. Deux URLs du même article faisaient échouer le lot entier (21000).
+  const n = (await cacher([
+    { arc_id: 'DEGRADE000000000000000003', canonical_url: 'https://x/f', title: 'Premier', body: '<p>A</p>' },
+    { arc_id: 'DEGRADE000000000000000003', canonical_url: 'https://x/f/', title: 'Second', body: '<p>B</p>' },
+  ]))[0].n;
+  check(n === 1, 'C’EST LA PROPRIÉTÉ QUI COMPTE : deux fois le même article dans un lot ne fait plus échouer le lot — PostgreSQL refusait d’affecter deux fois la même ligne');
+  check((await lire('DEGRADE000000000000000003')).title === 'Premier', 'et c’est la première occurrence qui l’emporte');
+
+  // L'EXPIRATION NE PEUT PLUS QUE CROÎTRE.
+  const jours = (j) => new Date(Date.now() + j * 86400000).toISOString();
+  await q(`INSERT INTO articles (arc_id, canonical_url, title) VALUES ('RECULE0000000000000000001','https://x/g','Recule')`);
+  await q(`SELECT * FROM create_gift_links(ARRAY['RECULE0000000000000000001'], $1::timestamptz)`, [jours(30)]);
+  const loin = (await q(`SELECT expires_at FROM gift_links WHERE arc_id='RECULE0000000000000000001'`))[0].expires_at;
+  await q(`SELECT * FROM create_gift_links(ARRAY['RECULE0000000000000000001'], $1::timestamptz)`, [jours(20)]);
+  const apres = (await q(`SELECT expires_at FROM gift_links WHERE arc_id='RECULE0000000000000000001'`))[0].expires_at;
+  check(new Date(apres).getTime() === new Date(loin).getTime(),
+    'une demande plus courte ne raccourcit pas — déjà vrai avant 011, par le chemin « unchanged »');
+
+  // LA VRAIE GARANTIE : même en passant par la branche qui PROLONGE, la date ne peut pas reculer.
+  const def = (await q(`SELECT pg_get_functiondef('public.create_gift_links(text[],timestamptz,uuid)'::regprocedure) AS d`))[0].d;
+  check(/FOR UPDATE/.test(def),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la ligne est VERROUILLÉE avant d’être lue — sans cela deux appels simultanés décident chacun sur une photo périmée, et le second écrase la date du premier');
+  check(/GREATEST\(/.test(def),
+    'et la date s’écrit par GREATEST : même si un verrou cédait, elle ne peut que croître — un invariant qui ne tient que par l’ordonnancement n’est pas un invariant');
+  check(/EXCEPTION WHEN unique_violation/.test(def),
+    'et deux créations simultanées du même article se soldent par une création et une prolongation — `FOR UPDATE` ne verrouille pas une ligne qui n’existe pas encore, le second appel échouait sur l’unicité et emportait tout le lot');
+
+  check((await q("SELECT has_function_privilege('service_role','public.cache_articles(jsonb)','EXECUTE') AS ok"))[0].ok,
+    'le rôle de service peut remplir le cache');
+  check(!(await q("SELECT has_function_privilege('anon','public.cache_articles(jsonb)','EXECUTE') AS ok"))[0].ok,
+    'et anon ne le peut pas : remplir le cache, c’est décider ce que la page servira');
 }
 
 console.log(`liens offerts (lot 1, schéma) : ${n} vérifications passées.`);

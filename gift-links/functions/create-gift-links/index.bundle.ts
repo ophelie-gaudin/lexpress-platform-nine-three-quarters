@@ -76,12 +76,24 @@ const ANCIEN_FORMAT = /_\d+\.html?$/i;
  * Rend { arcId } ou { erreur } — jamais null silencieux : un appelant qui fournit une URL d'un autre
  * format doit l'apprendre, pas recevoir deux liens au lieu de trois.
  */
+/** Les deux seuls hôtes dont le serveur accepte d'aller chercher une page. */
+const HOTES = new Set(['www.lexpress.fr', 'lexpress.fr']);
+
 function arcIdDepuisUrl(url) {
   if (typeof url !== 'string' || url.trim() === '') return { erreur: 'url vide' };
   let u;
   try { u = new URL(url.trim()); } catch { return { erreur: `url illisible : ${url}` }; }
 
-  if (!/(^|\.)lexpress\.fr$/i.test(u.hostname)) return { erreur: `domaine inattendu : ${u.hostname}` };
+  // LE SERVEUR IRA CHERCHER CETTE URL LUI-MÊME. Elle décide donc d'une requête sortante, et doit être
+  // tenue plus court qu'un lien que le lecteur suivra dans un corps d'article — ceux-là pointent où ils
+  // veulent, et c'est très bien.
+  //
+  // RELEVÉ PAR UNE REVUE ADVERSE (8 oct. 2026). Le filtre acceptait tout sous-domaine, tout port et
+  // tout protocole : `http://interne.lexpress.fr:8443/…` passait, et faisait appeler une machine
+  // interne depuis le runtime. Deux hôtes, https, aucun port.
+  if (u.protocol !== 'https:') return { erreur: `protocole refusé : ${u.protocol}` };
+  if (u.port !== '') return { erreur: `port refusé : ${u.port}` };
+  if (!HOTES.has(u.hostname.toLowerCase())) return { erreur: `domaine inattendu : ${u.hostname}` };
 
   // L'ancien format ne porte pas d'identifiant Arc. Ces articles sont déjà écartés par la règle des
   // 30 jours, mais un appelant qui en fournirait un doit recevoir un refus explicite, pas un silence.
@@ -113,6 +125,7 @@ function trierUrls(urls) {
 // Le second chemin reste utile APRÈS la mise en service : si Arc tombe, on sert un aperçu réel plutôt
 // que rien. L'appelant ne voit pas la différence dans la forme de la réponse, seulement dans `body`.
 
+
 const UA = 'LExpress-GiftLinks/1 (+contenu offert WhatsApp)';
 
 /**
@@ -138,6 +151,14 @@ async function chargerArticle(article, conf = {}) {
 
   const r = await f(article.canonicalUrl, { headers: { 'User-Agent': UA } });
   if (!r || !r.ok) return { erreur: `page injoignable (${r ? r.status : 'sans réponse'})` };
+  // UNE REDIRECTION PEUT SORTIR DU DOMAINE. L'URL d'entrée est filtrée, pas sa destination finale :
+  // une page de lexpress.fr qui renverrait ailleurs ferait lire au serveur ce qu'il n'a pas accepté
+  // d'aller chercher. On regarde où l'on a atterri, pas seulement où l'on allait.
+  if (typeof r.url === 'string' && r.url !== '') {
+    let hote;
+    try { hote = new URL(r.url).hostname.toLowerCase(); } catch { hote = null; }
+    if (hote && !HOTES.has(hote)) return { erreur: `redirection hors domaine : ${hote}` };
+  }
   const apercu = apercuDepuisHtml(await r.text(), article.canonicalUrl);
   if (apercu.erreur) return apercu;
   return { ...apercu, source: 'page-publique' };
@@ -182,10 +203,36 @@ const texteDe = (liste) => (Array.isArray(liste) ? liste : [])
   .filter((x) => x?.type === 'text' && typeof x.content === 'string')
   .map((x) => x.content.trim()).filter((x) => x !== '').join(' ');
 
+// CE QUI NE DOIT JAMAIS ATTEINDRE LA PAGE (8 oct. 2026).
+//
+// RELEVÉ PAR UNE REVUE ADVERSE. Le contrat de la page affirmait que `<script>`, `<iframe>`, `<style>`
+// et les attributs `on*` « n'arriveront jamais ». C'était faux : le HTML des éléments `text` passait
+// tel quel. Un `<img src=x onerror=…>` dans un article Arc traversait tout le service.
+//
+// LA PAGE A SA PROPRE LISTE BLANCHE, et c'est bien — mais une promesse écrite dans un contrat doit être
+// tenue par celui qui l'écrit. Deux barrières valent mieux qu'une, et personne ne sait à l'avance
+// laquelle cédera.
+//
+// ON RETIRE, ON N'ÉCHAPPE PAS. Échapper rendrait les balises visibles au lecteur ; le corps légitime en
+// porte — du gras, des liens, des intertitres — et doit continuer de s'afficher.
+const DANGEREUX = /<\s*(script|iframe|style|object|embed|form|link|meta|base)\b[\s\S]*?(<\s*\/\s*\1\s*>|$)/gi;
+const BALISE_SEULE = /<\s*\/?\s*(script|iframe|style|object|embed|form|link|meta|base)\b[^>]*>/gi;
+const ATTRIBUT_ON = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const URL_ACTIVE = /\s+(href|src|xlink:href)\s*=\s*(?:"\s*(?:javascript|data|vbscript):[^"]*"|'\s*(?:javascript|data|vbscript):[^']*'|\s*(?:javascript|data|vbscript):[^\s>]*)/gi;
+
+function assainir(html) {
+  if (typeof html !== 'string') return '';
+  return html
+    .replace(DANGEREUX, '')
+    .replace(BALISE_SEULE, '')
+    .replace(ATTRIBUT_ON, '')
+    .replace(URL_ACTIVE, '');
+}
+
 function rendreElement(e) {
   if (!e || typeof e !== 'object') return '';
 
-  if (e.type === 'text') return typeof e.content === 'string' ? e.content.trim() : '';
+  if (e.type === 'text') return typeof e.content === 'string' ? assainir(e.content).trim() : '';
 
   if (e.type === 'quote') {
     // La citation porte ses propres content_elements, et `citation` pour l'attribution — vide le plus
@@ -193,7 +240,7 @@ function rendreElement(e) {
     const propos = texteDe(e.content_elements);
     if (propos === '') return '';
     const signature = typeof e.citation?.content === 'string' ? sansBalises(e.citation.content) : '';
-    return '<blockquote>' + propos + (signature ? '<cite>' + echapper(signature) + '</cite>' : '') + '</blockquote>';
+    return '<blockquote>' + assainir(propos) + (signature ? '<cite>' + echapper(signature) + '</cite>' : '') + '</blockquote>';
   }
 
   if (e.type === 'image') {
@@ -206,7 +253,7 @@ function rendreElement(e) {
       .find((x) => typeof x === 'string' && x.trim() !== '') ?? '';
     const alt = sansBalises(legende) || 'Illustration de l\'article';
     return '<figure><img src="' + echapper(url) + '" alt="' + echapper(alt) + '" loading="lazy">'
-      + (legende ? '<figcaption>' + legende + '</figcaption>' : '') + '</figure>';
+      + (legende ? '<figcaption>' + assainir(legende) + '</figcaption>' : '') + '</figure>';
   }
 
   return '';
@@ -223,7 +270,16 @@ function rendreElement(e) {
 function sansSubstance(html) {
   if (typeof html !== 'string' || html.trim() === '') return true;
   if (/<img\b/i.test(html)) return false;
-  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&#160;/g, ' ').trim() === '';
+  // LES ESPACES SE DÉGUISENT. `&nbsp;` et `&#160;` étaient traités, mais pas `&#xA0;`, `&#32;` ni
+  // `&#8203;` — l'espace de largeur nulle. Un article composé de ces seules entités passait pour
+  // complet. On décode toute entité numérique et on regarde ce qui reste.
+  const decode = (s) => s
+    .replace(/&(nbsp|ensp|emsp|thinsp|zwnj|zwj|shy);/gi, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
+  // \u200B à \u200D : largeurs nulles. \uFEFF : marque d'ordre d'octets. Invisibles, donc sans substance.
+  return decode(html.replace(/<[^>]*>/g, ' '))
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').trim() === '';
 }
 
 /** Lecture d'un document Arc. Le corps est la concaténation des éléments de texte de content_elements. */
@@ -294,14 +350,27 @@ Deno.serve(async (req) => {
   // le temps que le job nocturne n8n passe sur son propre jeton — c'est fait, prouvé par 21 liens
   // attribués. Un secret qui ouvre la porte sans nommer personne est exactement ce qu'on voulait
   // supprimer : il rendait toute révocation collective.
-  const { data: clients } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  //
+  // ET UNE PANNE N'EST PAS UN REFUS. Si la base ne répond pas, l'appelant recevait le même 401 qu'un
+  // jeton révoqué — et la documentation l'envoyait réparer des jetons parfaitement valides. Un 503 dit
+  // la vérité : ce n'est pas vous, revenez.
+  const { data: clients, error: erreurAuth } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
+  if (erreurAuth) return json({ error: 'vérification indisponible, réessayez' }, 503);
   const client = Array.isArray(clients) ? clients[0] : clients;
   if (!client?.ok) return json({ error: 'non autorisé' }, 401);
   const clientId: string = client.client_id;
   const clientName: string = client.name;
 
   let corps: Record<string, unknown>;
-  try { corps = await req.json(); } catch { return json({ error: 'corps JSON illisible' }, 400); }
+  // `null` est un JSON valide : sans ce garde, la lecture des clés plus bas lève une exception non
+  // gérée et l'appelant reçoit une erreur du runtime au lieu d'un refus qui s'explique.
+  try {
+    const brut = await req.json();
+    if (brut === null || typeof brut !== 'object' || Array.isArray(brut)) {
+      return json({ error: 'le corps doit être un objet JSON' }, 400);
+    }
+    corps = brut as Record<string, unknown>;
+  } catch { return json({ error: 'corps JSON illisible' }, 400); }
 
   // ── UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
   //
@@ -330,6 +399,14 @@ Deno.serve(async (req) => {
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);
   }
 
+  // LA DURÉE SE VALIDE AVANT D'ÉCRIRE QUOI QUE CE SOIT. Elle était lue APRÈS la mise en cache : un
+  // `1e300` levait une exception une fois le contenu partagé déjà modifié. Et `-1`, `0`, `false` ou
+  // `"abc"` devenaient silencieusement quinze jours — l'appelant croyait avoir demandé autre chose.
+  const jours = corps.expires_in_days === undefined ? 15 : Number(corps.expires_in_days);
+  if (!Number.isFinite(jours) || !Number.isInteger(jours) || jours < 1 || jours > 365) {
+    return json({ error: `expires_in_days doit être un entier entre 1 et 365 (reçu : ${JSON.stringify(corps.expires_in_days)})` }, 400);
+  }
+
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
@@ -348,28 +425,34 @@ Deno.serve(async (req) => {
       continue;
     }
     const c = contenu as Record<string, unknown>;
-    // Corps de démonstration : sur demande explicite, jamais par défaut, et jamais par-dessus un vrai corps.
-    if (corps.fake_body === true && !c.body) c.body = corpsDeDemonstration(c);
+    // Corps de démonstration : sur demande explicite, jamais par défaut. `is_demo` voyage avec la ligne
+    // pour que la base refuse de le poser sur un article qu'elle a déjà — ce que cette fonction ne peut
+    // pas savoir, puisqu'elle ne voit que le chargement courant.
+    const demo = corps.fake_body === true && !c.body;
+    if (demo) c.body = corpsDeDemonstration(c);
     aCacher.push({
       arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
-      fetched_at: new Date().toISOString(),
+      is_demo: demo,
     });
     prets.push({ ...a, source: c.source, body: c.body });
   }
 
+  // LE CACHE PASSE PAR LA BASE, PAS PAR UN UPSERT. Un `upsert` écrase : Arc indisponible, et le corps
+  // complet d'un lien DÉJÀ diffusé devenait un aperçu. `cache_articles` ne dégrade aucun champ, refuse
+  // qu'une démonstration recouvre un vrai corps, et dédoublonne un lot qui contient deux fois le même
+  // article — ce que PostgreSQL rejetait en bloc (21000).
   if (aCacher.length > 0) {
-    const { error } = await db.from('articles').upsert(aCacher, { onConflict: 'arc_id' });
+    const { error } = await db.rpc('cache_articles', { p_articles: aCacher });
     if (error) return json({ error: `mise en cache refusée : ${error.message}`, rejected: rejets }, 500);
   }
 
   if (prets.length === 0) return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
 
-  const jours = Number(corps.expires_in_days ?? 15);
   const { data, error } = await db.rpc('create_gift_links', {
-    p_arc_ids: prets.map((p) => p.arcId),
+    p_arc_ids: [...new Set(prets.map((p) => p.arcId as string))],
     // NI `channel` NI `campaign` (8 oct. 2026). Le lien est COMMUN à tous ses destinataires : lui coller
     // une campagne attribuait toutes les lectures à la dernière déclarée, y compris les plus anciennes.
     // L'attribution appartient à l'envoi et voyage dans la query string du lien diffusé —

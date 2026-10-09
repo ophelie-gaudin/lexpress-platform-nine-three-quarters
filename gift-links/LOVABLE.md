@@ -203,9 +203,20 @@ de la page doit s'ouvrir à six balises de plus**, sans quoi le travail reste in
 l'enregistrer. La page n'a donc pas à s'en défendre une seconde fois, mais elle ne doit pas non plus
 accepter d'autres schémas si elle filtre déjà.
 
-**Ce qui n'arrivera jamais, et qu'il ne faut pas prévoir** : `<script>`, `<iframe>`, `<style>`, les
-attributs `on*`. Le service ne laisse passer que du texte, des citations et des images ; tout autre type
-d'élément Arc est écarté à l'extraction.
+**Ce que le service retire avant de servir** : `<script>`, `<iframe>`, `<style>`, `<object>`,
+`<embed>`, `<form>`, `<link>`, `<meta>`, `<base>`, les attributs `on*`, et les URLs `javascript:`,
+`data:`, `vbscript:` dans un `href` ou un `src`. Tout type d'élément Arc autre que texte, citation et
+image est écarté dès l'extraction.
+
+> **Gardez votre liste blanche quand même.** Jusqu'au 8 octobre 2026, ce contrat affirmait que ces
+> balises « n'arriveraient jamais » — et c'était faux : le HTML des éléments `text` passait tel quel.
+> Une revue adverse l'a relevé, le service assainit désormais. Mais une page qui se repose sur la
+> promesse d'un autre tombe le jour où cette promesse se révèle fausse. **Deux barrières valent mieux
+> qu'une, et personne ne sait d'avance laquelle cédera.**
+
+**Ce que le service laisse passer, et qu'il faut afficher** : le gras, l'italique, les intertitres, et
+les liens vers l'extérieur. Un article cite ailleurs — un PDF de la Ville de Paris, un rapport, un autre
+site. Les écarter viderait les articles de leur substance.
 
 **Les « à lire aussi » sont volontairement absents.** Ils mènent au paywall : les afficher dans un article
 offert reviendrait à promettre une lecture libre, puis à buter le lecteur trois paragraphes plus loin.
