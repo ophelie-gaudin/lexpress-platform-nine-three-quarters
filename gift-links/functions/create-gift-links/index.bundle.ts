@@ -375,6 +375,30 @@ const CORS = {
 const json = (corps: unknown, status = 200) =>
   new Response(JSON.stringify(corps), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// ── CE QUI SE VOIT À 3 H DU MATIN.
+//
+// Cette fonction a longtemps été muette : elle expliquait précisément ses refus — « aucun article
+// exploitable », « mise en cache refusée : … » — mais UNIQUEMENT dans la réponse HTTP. Le diagnostic
+// d'une panne nocturne dépendait donc de n8n, dont la rétention est de 14 jours OU 10 000 exécutions
+// toutes confondues : un workflow bavard chasse les autres, et le motif disparaît avant qu'on le lise.
+// Côté Supabase il ne restait qu'un `502` sans cause.
+//
+// UNE LIGNE JSON PAR ÉVÉNEMENT, pour que l'explorateur de logs puisse filtrer sur `evenement`.
+//
+// NI LE JETON DE SERVICE NI LE JETON D'UN LIEN N'Y FIGURENT JAMAIS. Le second EST l'accès à l'article
+// premium : l'écrire dans un journal reviendrait à déposer la clé à côté de la porte. On nomme le
+// service appelant et l'URL d'origine, qui sont publics, jamais de quoi ouvrir quoi que ce soit.
+const journal = (niveau: 'error' | 'warn', evenement: string, details: Record<string, unknown> = {}) => {
+  const ligne = JSON.stringify({ fn: 'create-gift-links', evenement, ...details });
+  if (niveau === 'error') console.error(ligne);
+  else console.warn(ligne);
+};
+
+// Les refus portent une URL et un motif ; on en garde dix, de quoi comprendre sans inonder le journal
+// le jour où un appelant envoie une liste entière.
+const apercuRejets = (rejets: Array<Record<string, unknown>>) =>
+  rejets.slice(0, 10).map((r) => ({ url: r.url, erreur: r.erreur }));
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'méthode non autorisée' }, 405);
@@ -387,7 +411,10 @@ Deno.serve(async (req) => {
   // LE 401 EST NU. La base sait distinguer « jeton inconnu » de « jeton révoqué » ; l'appelant, non.
   // Le lui dire renseignerait qui cherche à deviner.
   const presente = req.headers.get('x-gift-service-token') ?? '';
-  if (presente === '') return json({ error: 'non autorisé' }, 401);
+  if (presente === '') {
+    journal('warn', 'jeton_refuse', { cause: 'en-tête absent' });
+    return json({ error: 'non autorisé' }, 401);
+  }
 
   const db = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'));
 
@@ -404,9 +431,18 @@ Deno.serve(async (req) => {
   // jeton révoqué — et la documentation l'envoyait réparer des jetons parfaitement valides. Un 503 dit
   // la vérité : ce n'est pas vous, revenez.
   const { data: clients, error: erreurAuth } = await db.rpc('verify_api_client', { p_token_sha256: empreinte });
-  if (erreurAuth) return json({ error: 'vérification indisponible, réessayez' }, 503);
+  if (erreurAuth) {
+    journal('error', 'verification_indisponible', { message: erreurAuth.message });
+    return json({ error: 'vérification indisponible, réessayez' }, 503);
+  }
   const client = Array.isArray(clients) ? clients[0] : clients;
-  if (!client?.ok) return json({ error: 'non autorisé' }, 401);
+  if (!client?.ok) {
+    // Le 401 rendu reste nu — ne pas renseigner qui cherche à deviner. Le journal, lui, est interne :
+    // il peut dire si le jeton est inconnu ou révoqué, et c'est exactement ce qu'on veut savoir quand
+    // un service en place cesse brusquement de passer.
+    journal('warn', 'jeton_refuse', { cause: client?.reason ?? 'jeton inconnu' });
+    return json({ error: 'non autorisé' }, 401);
+  }
   const clientId: string = client.client_id;
   const clientName: string = client.name;
 
@@ -415,9 +451,15 @@ Deno.serve(async (req) => {
   // gérée et l'appelant reçoit une erreur du runtime au lieu d'un refus qui s'explique.
   try {
     const brut = await req.json();
-    if (!corpsUtilisable(brut)) return json({ error: 'le corps doit être un objet JSON' }, 400);
+    if (!corpsUtilisable(brut)) {
+      journal('warn', 'corps_invalide', { client: clientName, cause: 'pas un objet JSON' });
+      return json({ error: 'le corps doit être un objet JSON' }, 400);
+    }
     corps = brut as Record<string, unknown>;
-  } catch { return json({ error: 'corps JSON illisible' }, 400); }
+  } catch {
+    journal('warn', 'corps_invalide', { client: clientName, cause: 'JSON illisible' });
+    return json({ error: 'corps JSON illisible' }, 400);
+  }
 
   // ── UNE CLÉ INCONNUE EST UN REFUS, PAS UN HAUSSEMENT D'ÉPAULES.
   //
@@ -431,6 +473,7 @@ Deno.serve(async (req) => {
   // destinataires et qu'une campagne posée sur lui écraserait celle de tous les autres.
   const inconnues = clesInconnues(corps);
   if (inconnues.length > 0) {
+    journal('warn', 'cles_inconnues', { client: clientName, cles: inconnues });
     return json({
       error: `clé(s) non reconnue(s) : ${inconnues.join(', ')}`,
       accepted_keys: CLES_ACCEPTEES,
@@ -442,6 +485,7 @@ Deno.serve(async (req) => {
 
   const { retenus, rejets } = trierUrls(corps.urls as string[]);
   if (retenus.length === 0) {
+    journal('warn', 'aucune_url_exploitable', { client: clientName, rejets: apercuRejets(rejets) });
     return json({ error: 'aucune URL exploitable', rejected: rejets }, 400);
   }
 
@@ -449,7 +493,10 @@ Deno.serve(async (req) => {
   // `1e300` levait une exception une fois le contenu partagé déjà modifié. Et `-1`, `0`, `false` ou
   // `"abc"` devenaient silencieusement quinze jours — l'appelant croyait avoir demandé autre chose.
   const duree = dureeDemandee(corps.expires_in_days);
-  if (duree.erreur) return json({ error: duree.erreur }, 400);
+  if (duree.erreur) {
+    journal('warn', 'duree_invalide', { client: clientName, demande: corps.expires_in_days, erreur: duree.erreur });
+    return json({ error: duree.erreur }, 400);
+  }
   const jours = duree.jours as number;
 
   const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
@@ -491,10 +538,19 @@ Deno.serve(async (req) => {
   // article — ce que PostgreSQL rejetait en bloc (21000).
   if (aCacher.length > 0) {
     const { error } = await db.rpc('cache_articles', { p_articles: aCacher });
-    if (error) return json({ error: `mise en cache refusée : ${error.message}`, rejected: rejets }, 500);
+    if (error) {
+      journal('error', 'cache_refuse', { client: clientName, articles: aCacher.length, message: error.message });
+      return json({ error: `mise en cache refusée : ${error.message}`, rejected: rejets }, 500);
+    }
   }
 
-  if (prets.length === 0) return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
+  // LE CAS QUI COMPTE. Un 502 ici veut dire qu'AUCUN article n'a pu être chargé : Arc muet, article
+  // déplacé, accès changé. C'est la panne qu'on découvrait jusqu'ici en voyant quelqu'un recevoir un
+  // mur d'abonnement. Le motif de chaque URL part dans le journal, par URL.
+  if (prets.length === 0) {
+    journal('error', 'aucun_article_exploitable', { client: clientName, demandes: retenus.length, rejets: apercuRejets(rejets) });
+    return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
+  }
 
   const { data, error } = await db.rpc('create_gift_links', {
     p_arc_ids: [...new Set(prets.map((p) => p.arcId as string))],
@@ -510,7 +566,10 @@ Deno.serve(async (req) => {
     p_expires_at: Number.isFinite(jours) && jours > 0
       ? new Date(Date.now() + jours * 86400000).toISOString() : null,
   });
-  if (error) return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+  if (error) {
+    journal('error', 'creation_refusee', { client: clientName, arc_ids: [...new Set(prets.map((p) => p.arcId as string))], message: error.message });
+    return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+  }
 
   const parArc = new Map((data ?? []).map((l: Record<string, string>) => [l.arc_id, l]));
   const racine = (env('GIFT_LINK_BASE') || 'https://articles.lexpress.fr').replace(/\/+$/, '');
@@ -534,6 +593,25 @@ Deno.serve(async (req) => {
       source: p.source,
       // created : lien neuf. extended : date repoussée. unchanged : déjà valable plus longtemps.
       state: l.state,
+    });
+  }
+
+  // ── LES DEUX DÉGRADATIONS QUI NE LÈVENT AUCUNE ERREUR.
+  //
+  // Un appel peut rendre 200 et décevoir quand même. Deux cas, et ce sont les plus coûteux parce qu'ils
+  // ne ressemblent pas à des pannes : une partie du lot refusée pendant que le reste passe, et un lien
+  // rendu en APERÇU — un lien qui mène au mur d'abonnement, c'est-à-dire exactement ce que ce service
+  // existe pour éviter. L'appelant le sait, il reçoit `content: "preview"` ; encore faut-il que
+  // quelqu'un le lise. Le journal le dit aussi, au niveau `warn`.
+  if (rejets.length > 0 && liens.length > 0) {
+    journal('warn', 'lot_partiel', { client: clientName, crees: liens.length, refuses: rejets.length, rejets: apercuRejets(rejets) });
+  }
+  const apercus = liens.filter((l) => l.content === 'preview');
+  if (apercus.length > 0) {
+    journal('warn', 'apercu_seulement', {
+      client: clientName,
+      arc_ids: apercus.map((l) => l.arc_id),
+      sources: [...new Set(apercus.map((l) => l.source))],
     });
   }
 

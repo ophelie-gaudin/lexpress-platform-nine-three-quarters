@@ -263,6 +263,51 @@ const PAGE = `<html><head>
 }
 
 
+// ── CE QUI SE VOIT À 3 H DU MATIN (9 oct. 2026).
+//
+// La fonction n'écrivait AUCUN journal. Elle expliquait ses refus avec précision, mais dans la réponse
+// HTTP seulement : le motif d'une panne nocturne vivait dans n8n, dont la rétention est de 14 jours OU
+// 10 000 exécutions toutes confondues. Côté Supabase il ne restait qu'un `502` sans cause.
+//
+// ET `verify_api_client` RENDAIT SON MOTIF DANS LE VIDE : la migration 008 écrit noir sur blanc « le
+// motif est rendu ici pour les journaux » — il n'allait nulle part.
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync('./gift-links/functions/create-gift-links/index.ts', 'utf8');
+  const { CIBLE } = await import('./build-gift-links-function.mjs');
+  const deployable = readFileSync(CIBLE, 'utf8');
+
+  for (const evenement of ['verification_indisponible', 'jeton_refuse', 'corps_invalide', 'cles_inconnues',
+                           'aucune_url_exploitable', 'duree_invalide', 'cache_refuse',
+                           'aucun_article_exploitable', 'creation_refusee']) {
+    check(src.includes(`'${evenement}'`), `le chemin d’échec « ${evenement} » laisse une trace`);
+  }
+
+  check(/journal\('error', 'aucun_article_exploitable'[\s\S]{0,200}rejets: apercuRejets\(rejets\)/.test(src),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le 502 d’Arc journalise le motif DE CHAQUE URL — sans lui, on sait qu’il y a eu une panne et jamais laquelle');
+  check(src.includes("'lot_partiel'") && src.includes("'apercu_seulement'"),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : les deux dégradations qui rendent 200 sont tracées — un lot à moitié refusé, et un lien d’APERÇU, c’est-à-dire un lien qui mène au mur d’abonnement que ce service existe pour éviter');
+
+  // AUCUN SECRET DANS LE JOURNAL. Le jeton d'un lien EST l'accès à l'article premium : l'écrire dans un
+  // journal reviendrait à déposer la clé à côté de la porte. Le jeton de service, lui, ouvre la
+  // fabrication de liens. On relit chaque appel à `journal(` pour s'en assurer.
+  const appels = src.match(/journal\('(?:error|warn)',[\s\S]*?\);/g) ?? [];
+  check(appels.length >= 11, `les appels au journal sont bien tous relus (${appels.length})`);
+  for (const appel of appels) {
+    check(!/\btoken\b/.test(appel), 'aucun appel au journal ne porte un jeton');
+    check(!/presente/.test(appel), 'aucun appel au journal ne porte le jeton de service reçu');
+    check(!/\bl\.link\b|racine/.test(appel), 'aucun appel au journal ne porte l’URL d’un lien offert');
+  }
+
+  check(/journal\('warn', 'jeton_refuse', \{ cause: client\?\.reason/.test(src),
+    'le motif rendu par verify_api_client arrive enfin quelque part : « jeton inconnu » et « jeton révoqué » se distinguent dans le journal, jamais dans la réponse');
+  check(/const apercuRejets[\s\S]{0,200}slice\(0, 10\)/.test(src),
+    'les refus journalisés sont plafonnés à dix : une liste entière ne noie pas le journal');
+  check(/console\.error/.test(deployable) && /console\.warn/.test(deployable),
+    'et le fichier déployable porte bien ces journaux');
+}
+
+
 // ── CE QU'ON GARDE DU CORPS, ET CE QU'ON ÉCARTE (7 oct. 2026).
 //
 // Le corps ne retenait que les paragraphes : un article long arrivait sans une seule respiration, et ses

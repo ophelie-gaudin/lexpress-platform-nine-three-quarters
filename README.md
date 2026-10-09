@@ -289,7 +289,7 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 152 vérifications du schéma et 144 vérifications du traitement des articles.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma et 198 vérifications du traitement des articles.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
@@ -515,6 +515,20 @@ SELECT public.purge_gift_links();
 
 Chaque horizon est un paramètre : `purge_withdrawn_bodies(14)` pour deux semaines de grâce, `purge_old_reads(500)` pour garder les lectures plus longtemps. Une rétention de lectures plus courte que la vie d'un lien est **refusée** — un `0` passé par distraction viderait l'historique.
 
+## Diagnostiquer une panne
+
+La fonction écrit une ligne JSON dans les logs Supabase à chaque chemin d'échec, filtrable sur le champ `evenement`. Jusqu'au 9 octobre 2026 elle était muette : elle expliquait ses refus avec précision, mais uniquement dans la réponse HTTP, si bien que le motif d'une panne nocturne ne survivait que dans les journaux de l'appelant. Côté Supabase il ne restait qu'un code d'erreur sans cause.
+
+Les événements de niveau `error` signalent une panne franche : `aucun_article_exploitable` quand aucune URL du lot n'a pu être chargée — le motif de chaque URL est joint —, `cache_refuse` et `creation_refusee` quand la base refuse d'écrire, `verification_indisponible` quand la base ne répond plus, auquel cas l'appelant reçoit un `503` et non un `401`, pour qu'il ne parte pas réparer un jeton valide.
+
+Les événements de niveau `warn` signalent un appel mal formé ou une dégradation : `jeton_refuse`, qui distingue dans le journal « jeton inconnu » de « jeton révoqué » alors que la réponse HTTP reste un `401` nu ; `corps_invalide`, `cles_inconnues`, `aucune_url_exploitable` et `duree_invalide` ; `lot_partiel` quand une partie seulement du lot est passée ; et `apercu_seulement`.
+
+Ce dernier mérite l'attention. Il ne correspond à aucune erreur : l'appel rend `200`, et la réponse porte `content: "preview"`. Cela signifie que le lien existe mais mène à l'aperçu de l'article, donc au mur d'abonnement que ce service existe pour éviter. Un intégrateur qui ne lit pas le champ `content` enverra ce lien sans le savoir. Le journal le dit aussi, pour que l'exploitant puisse le voir sans dépendre de l'appelant.
+
+Aucun jeton n'apparaît dans ces journaux. Le jeton d'un lien est l'accès à l'article premium : l'écrire dans un journal reviendrait à déposer la clé à côté de la porte. Les lignes nomment le service appelant et l'URL d'origine de l'article, qui sont publics. Les tests relisent chaque appel au journal pour le vérifier.
+
+La rétention des logs Supabase dépend du plan : un jour en Free, sept jours en Pro, vingt-huit en Team. Les passages de la purge nocturne, eux, sont consignés dans la table `cron.job_run_details`, qui n'est pas soumise à cette limite, et les lectures de liens dans `gift_link_opens`, conservées treize mois.
+
 ## Installer dans un autre environnement
 
 Utiliser un projet Supabase dédié. Appliquer **les douze fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
@@ -591,7 +605,7 @@ WHERE token = '<token>' AND withdrawn_at IS NULL;
 - Déploiement et configuration distante à rendre reproductibles ; CI à ajouter selon l’hébergement Git retenu.
 - Aucun écran d’administration inclus : création via API, retrait et prolongation possibles en SQL.
 - Mesure Piano côté page d'offres et attribution entre campagnes à compléter.
-- Tests HTTP de la fonction et tests du frontend publié à compléter : les 314 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
+- Tests HTTP de la fonction et tests du frontend publié à compléter : les 368 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
 
 ## Provenance
 
