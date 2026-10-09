@@ -493,12 +493,14 @@ pas faire, étant commun au lien.
 
 | Donnée | Horizon | Ce qui part |
 | --- | --- | --- |
-| `articles.body` | 90 jours après la dernière expiration | **le corps seul** — titre, chapeau et image restent |
+| `articles.body` | **jamais** par ancienneté ; 7 jours après un retrait | **le corps seul** — titre, chapeau et image restent |
 | `gift_links` | **jamais** | — |
 | `gift_link_opens.send_id` | 90 jours | l'identifiant d'envoi |
 | `gift_link_opens` | 13 mois | la ligne |
 
-**Le corps est la donnée sensible** : une copie intégrale d'un article réservé aux abonnés. Un lien vit 15 à 30 jours ; trois mois après sa dernière expiration, plus personne ne le diffuse. On vide le corps sans supprimer la ligne — le titre et le chapeau sont publics sur lexpress.fr, la page en a besoin pour son état `preview`, et si l'article est réoffert le service ira rechercher le corps chez Arc. Le vide se remplit tout seul ; l'inverse n'est pas vrai.
+**Le corps n'est pas purgé par ancienneté, et c'est délibéré.** Remplir un corps vide suppose qu'Arc réponde et que l'article soit encore en ligne. Un article qu'on ne peut plus recharger ne peut plus être offert entier : la page retomberait en `preview` alors qu'on avait la copie et qu'on l'a jetée. L'argument de l'exposition ne mord que si la base est **déjà** compromise, et elle est fermée — aucune table lisible par `anon` ni `authenticated`, zéro politique RLS, une seule fonction exécutable sans jeton.
+
+**Le seul cas où le corps part : un retrait.** `withdrawn_at` est une décision éditoriale de ne plus diffuser l'article. Garder son texte intégral la contredirait, et un lien retiré n'est jamais ressuscité par le service : il n'y a rien à resynchroniser ensuite. Sept jours de grâce, parce qu'un retrait se fait dans l'urgence et se reprend parfois le lendemain.
 
 **La ligne `gift_links` n'est jamais élaguée.** La supprimer casserait une promesse écrite : un lien expiré se rouvre par une nouvelle demande, avec le même token. Sans la ligne, un token neuf est créé et le lien que quelqu'un garde dans un vieux message meurt pour de bon. Une ligne `withdrawn_at` moins que toute autre : l'effacer rendrait l'article offrable de nouveau, en silence.
 
@@ -508,10 +510,10 @@ pas faire, étant commun au lien.
 
 ```sql
 SELECT public.purge_gift_links();
--- {"bodies_cleared": 0, "send_ids_erased": 0, "reads_deleted": 0, "ran_at": "…"}
+-- {"withdrawn_bodies_cleared": 0, "send_ids_erased": 0, "reads_deleted": 0, "ran_at": "…"}
 ```
 
-Chaque horizon est un paramètre : `purge_stale_bodies(120)` pour quatre mois. Une rétention plus courte que la vie d'un lien est **refusée** — un `0` passé par distraction viderait tout le cache.
+Chaque horizon est un paramètre : `purge_withdrawn_bodies(14)` pour deux semaines de grâce, `purge_old_reads(500)` pour garder les lectures plus longtemps. Une rétention de lectures plus courte que la vie d'un lien est **refusée** — un `0` passé par distraction viderait l'historique.
 
 ## Installer dans un autre environnement
 
@@ -566,8 +568,8 @@ Ne pas supprimer un lien diffusé : poser `withdrawn_at` conserve la ligne et do
 - Sources et historique du frontend Lovable à rattacher pour une reprise complète.
 - Déploiement et configuration distante à rendre reproductibles ; CI à ajouter selon l’hébergement Git retenu.
 - Aucun écran d’administration inclus : création via API, retrait et prolongation possibles en SQL.
-- Archivage/rétention, Piano et attribution entre campagnes à compléter.
-- Tests HTTP de la fonction et tests du frontend publié à compléter : les 296 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
+- Mesure Piano côté page d'offres et attribution entre campagnes à compléter.
+- Tests HTTP de la fonction et tests du frontend publié à compléter : les 314 vérifications actuelles couvrent le SQL, les modules de contenu et certaines propriétés du bundle.
 
 ## Provenance
 
