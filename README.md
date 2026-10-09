@@ -546,12 +546,34 @@ Après déploiement, vérifier séparément les droits publics, une création av
 
 ## Exploitation
 
-Retrait immédiat, depuis l'éditeur SQL de Supabase (voir « Administrer les jetons » plus haut pour le
-chemin exact), en ciblant le token concerné :
+### Le retrait : à réserver à une dépublication
+
+`withdrawn_at` coupe l'accès à un article. Il est **réservé à une dépublication éditoriale ou
+juridique** — droit de réponse, diffamation, injonction, erreur factuelle grave, embargo rompu. L'article
+disparaît de lexpress.fr, et sans ce geste notre cache continuerait de servir le texte intégral à
+quiconque détient le token.
+
+**Il coupe tout, par construction.** Un article n'a qu'un lien, commun à tous les services qui le
+diffusent : retirer pour un canal retire pour tous, y compris les messages déjà envoyés, qui afficheront
+un refus. Les services appelants l'apprennent — leur demande suivante rend un `rejected` avec le motif,
+jamais un silence.
+
+**Ne pas s'en servir** pour un token recopié ailleurs (laisser expirer plutôt que de punir les
+destinataires légitimes), ni pour un mauvais ciblage (le lien est commun ; on arrête l'envoi, pas le
+lien), ni pour un article qu'on regrette d'avoir offert (il expire seul).
+
+Si c'est bien une dépublication, depuis l'éditeur SQL de Supabase (voir « Administrer les jetons » plus
+haut pour le chemin exact), en ciblant le token concerné :
 
 ```sql
 UPDATE public.gift_links SET withdrawn_at = now() WHERE token = '<token>';
 ```
+
+Pourquoi passer par ce champ plutôt que par la date : `UPDATE … SET expires_at = now()` ne tient pas.
+La collecte nocturne resélectionne l'article, redemande un lien, la date est repoussée — le lien se
+rouvre de lui-même. `withdrawn_at` est le seul état que l'automatisation ne défait pas.
+
+### Prolonger
 
 Prolongation manuelle sans raccourcir une durée déjà plus longue :
 
@@ -561,7 +583,7 @@ SET expires_at = greatest(expires_at, now() + interval '15 days'), extended_at =
 WHERE token = '<token>' AND withdrawn_at IS NULL;
 ```
 
-Ne pas supprimer un lien diffusé : poser `withdrawn_at` conserve la ligne et donne une réponse explicite au lecteur. Pour réouvrir un retrait, faire valider la décision éditoriale avant d’effacer ce champ. Le script `004-jeu-d-essai.sql` remet uniquement ses propres articles fictifs à l’état attendu ; conserver les liens diffusés lors de tout nettoyage.
+**Ne jamais supprimer la ligne d'un lien diffusé** : on ne sait pas qui l'a reçu, et le destinataire lirait « ce lien n'existe pas ». Si l'accès doit cesser, c'est `withdrawn_at`, aux conditions ci-dessus — la ligne reste et le lecteur reçoit une réponse qui dit la vérité. Pour rouvrir un retrait, faire valider la décision éditoriale avant d'effacer le champ. Le script `004-jeu-d-essai.sql` remet uniquement ses propres articles fictifs à l'état attendu ; conserver les liens diffusés lors de tout nettoyage.
 
 ## Limites et prochaines étapes
 
