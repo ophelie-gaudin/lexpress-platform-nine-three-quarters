@@ -21,6 +21,7 @@ await db.exec(readFileSync('gift-links/supabase/008-noms-anglais.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/009-attribution-par-envoi.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/010-vues-security-invoker.sql', 'utf8'));
 await db.exec(readFileSync('gift-links/supabase/011-ne-jamais-degrader.sql', 'utf8'));
+await db.exec(readFileSync('gift-links/supabase/012-retention.sql', 'utf8'));
 
 const q = async (sql, params) => (await db.query(sql, params)).rows;
 
@@ -609,6 +610,80 @@ const lire = async (t) => (await q('SELECT * FROM get_gift_article($1)', [t]))[0
     'le rôle de service peut remplir le cache');
   check(!(await q("SELECT has_function_privilege('anon','public.cache_articles(jsonb)','EXECUTE') AS ok"))[0].ok,
     'et anon ne le peut pas : remplir le cache, c’est décider ce que la page servira');
+}
+
+
+// ── 012 : ce qu'on garde, et combien de temps.
+//
+// CE QUE CES CAS DÉFENDENT. Une purge est le seul code dont une erreur ne se rattrape pas : ce qu'elle
+// efface est parti. Les cas vérifient d'abord ce qu'elle NE touche PAS.
+{
+  await db.exec(readFileSync('gift-links/supabase/012-retention.sql', 'utf8'));
+  const jours = (j) => new Date(Date.now() + j * 86400000).toISOString();
+  const vieux = (j) => new Date(Date.now() - j * 86400000).toISOString();
+
+  // Trois articles : un lien vivant, un lien expiré hier, un lien expiré il y a un an.
+  for (const [arc, nom] of [['PURGE000000000000000VIVANT', 'Vivant'],
+                            ['PURGE00000000000000HIER001', 'Hier'],
+                            ['PURGE00000000000000ANCIEN1', 'Ancien']])
+    await q(`INSERT INTO articles (arc_id, canonical_url, title, standfirst, image_url, body, fetched_at)
+             VALUES ($1, 'https://x/p', $2, 'Un chapeau public.', 'https://img/p.jpg', '<p>Le corps payant.</p>', $3)`,
+            [arc, nom, vieux(400)]);
+  await q(`SELECT create_gift_links(ARRAY['PURGE000000000000000VIVANT'], $1::timestamptz)`, [jours(10)]);
+  for (const [arc, quand] of [['PURGE00000000000000HIER001', -1], ['PURGE00000000000000ANCIEN1', -365]]) {
+    await q(`SELECT create_gift_links(ARRAY[$1], $2::timestamptz)`, [arc, jours(1)]);
+    await q(`UPDATE gift_links SET expires_at = $2 WHERE arc_id = $1`, [arc, jours(quand)]);
+  }
+
+  const corps = async (arc) => (await q('SELECT body FROM articles WHERE arc_id = $1', [arc]))[0].body;
+  const vides = (await q('SELECT purge_stale_bodies() AS n'))[0].n;
+
+  check(corps('PURGE000000000000000VIVANT') !== null && (await corps('PURGE000000000000000VIVANT')) !== null,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un article dont le lien est ENCORE VALABLE garde son corps, quelle que soit son ancienneté — le purger servirait un teaser à qui tient le lien');
+  check((await corps('PURGE00000000000000HIER001')) !== null,
+    'et un lien expiré HIER aussi : la rétention court à partir de la fin du lien, pas de sa création');
+  check((await corps('PURGE00000000000000ANCIEN1')) === null && vides === 1,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : seul l’article dont le lien a expiré il y a un an perd son corps — une copie d’article payant que plus personne ne diffuse n’a pas à rester');
+
+  const reste = (await q(`SELECT title, standfirst, image_url FROM articles WHERE arc_id = 'PURGE00000000000000ANCIEN1'`))[0];
+  check(reste.title === 'Ancien' && reste.standfirst !== null && reste.image_url !== null,
+    'ON VIDE LE CORPS, PAS LA LIGNE : titre, chapeau et image sont publics sur lexpress.fr, et la page en a besoin pour son aperçu');
+  check((await q(`SELECT count(*)::int c FROM gift_links WHERE arc_id = 'PURGE00000000000000ANCIEN1'`))[0].c === 1,
+    'et le LIEN survit : supprimer la ligne casserait la réouverture d’un lien expiré avec le même token, et tuerait celui que quelqu’un garde dans un vieux message');
+
+  // UNE RÉTENTION TROP COURTE EST REFUSÉE. Un `0` passé par distraction viderait tout le cache.
+  await assert.rejects(() => db.query('SELECT purge_stale_bodies(0)'),
+    'une rétention plus courte que la vie d’un lien est refusée'); n++;
+  await assert.rejects(() => db.query('SELECT purge_old_reads(1)'),
+    'et pour les lectures aussi : elles servent aux relances'); n++;
+
+  // L'IDENTIFIANT D'ENVOI PART, LA LECTURE RESTE.
+  const t = (await q(`SELECT token FROM gift_links WHERE arc_id = 'PURGE000000000000000VIVANT'`))[0].token;
+  await q(`INSERT INTO gift_link_opens (token, send_id, campaign_group, opened_at) VALUES ($1, $2, 'segment', $3)`,
+          [t, 'a'.repeat(32), vieux(200)]);
+  await q(`INSERT INTO gift_link_opens (token, send_id, campaign_group, opened_at) VALUES ($1, $2, 'segment', now())`,
+          [t, 'b'.repeat(32)]);
+  const anonymisees = (await q('SELECT purge_send_ids() AS n'))[0].n;
+  check(anonymisees === 1, 'un seul identifiant d’envoi effacé : celui de la lecture d’il y a 200 jours');
+  const vieille = (await q(`SELECT send_id, campaign_group FROM gift_link_opens WHERE opened_at < now() - interval '100 days' ORDER BY opened_at LIMIT 1`))[0];
+  check(vieille.send_id === null && vieille.campaign_group === 'segment',
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : l’identifiant d’envoi désigne une personne et part à 90 jours ; le segment et la date restent, et les comptes par campagne ne bougent pas');
+  check((await q(`SELECT send_id FROM gift_link_opens WHERE opened_at > now() - interval '1 day' ORDER BY opened_at DESC LIMIT 1`))[0].send_id !== null,
+    'et une lecture récente garde le sien : la relance J+2 en a besoin');
+
+  // LE PASSAGE UNIQUE REND SON COMPTE RENDU.
+  const bilan = (await q('SELECT purge_gift_links() AS r'))[0].r;
+  for (const cle of ['bodies_cleared', 'send_ids_erased', 'reads_deleted', 'ran_at'])
+    check(cle in bilan, `le passage unique rend ${cle} : une purge muette ne se vérifie pas`);
+
+  const purges = await q(`SELECT p.proname,
+      has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
+      has_function_privilege('service_role', p.oid, 'EXECUTE') AS service
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'public' AND p.proname LIKE 'purge%' ORDER BY 1`);
+  check(purges.length === 4, 'les quatre fonctions de purge existent');
+  check(purges.every((f) => f.anon === false && f.service === true),
+    'aucune n’est ouverte à anon, toutes le sont au rôle de service : effacer n’est pas une opération publique');
 }
 
 console.log(`liens offerts (lot 1, schéma) : ${n} vérifications passées.`);

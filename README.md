@@ -489,9 +489,33 @@ FROM public.gift_link_reads_by_campaign ORDER BY reads DESC;
 envois, et des lectures attribuables à chacun. C’est ce que le champ `campaign` d’autrefois ne pouvait
 pas faire, étant commun au lien.
 
+## Ce qu'on garde, et combien de temps
+
+| Donnée | Horizon | Ce qui part |
+| --- | --- | --- |
+| `articles.body` | 90 jours après la dernière expiration | **le corps seul** — titre, chapeau et image restent |
+| `gift_links` | **jamais** | — |
+| `gift_link_opens.send_id` | 90 jours | l'identifiant d'envoi |
+| `gift_link_opens` | 13 mois | la ligne |
+
+**Le corps est la donnée sensible** : une copie intégrale d'un article réservé aux abonnés. Un lien vit 15 à 30 jours ; trois mois après sa dernière expiration, plus personne ne le diffuse. On vide le corps sans supprimer la ligne — le titre et le chapeau sont publics sur lexpress.fr, la page en a besoin pour son état `preview`, et si l'article est réoffert le service ira rechercher le corps chez Arc. Le vide se remplit tout seul ; l'inverse n'est pas vrai.
+
+**La ligne `gift_links` n'est jamais élaguée.** La supprimer casserait une promesse écrite : un lien expiré se rouvre par une nouvelle demande, avec le même token. Sans la ligne, un token neuf est créé et le lien que quelqu'un garde dans un vieux message meurt pour de bon. Une ligne `withdrawn_at` moins que toute autre : l'effacer rendrait l'article offrable de nouveau, en silence.
+
+**`send_id` désigne un envoi, donc une personne.** Il sert à la relance J+2 — quelques jours. Il part à 90 jours sans toucher au reste : le segment et la date restent, et les comptes par campagne ne bougent pas.
+
+`pg_cron` exécute la purge tous les jours à **4 h 15 UTC**, après la collecte nocturne pour ne pas croiser une création de liens.
+
+```sql
+SELECT public.purge_gift_links();
+-- {"bodies_cleared": 0, "send_ids_erased": 0, "reads_deleted": 0, "ran_at": "…"}
+```
+
+Chaque horizon est un paramètre : `purge_stale_bodies(120)` pour quatre mois. Une rétention plus courte que la vie d'un lien est **refusée** — un `0` passé par distraction viderait tout le cache.
+
 ## Installer dans un autre environnement
 
-Utiliser un projet Supabase dédié. Appliquer **les dix fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
+Utiliser un projet Supabase dédié. Appliquer **les douze fichiers de `gift-links/supabase/` dans l’ordre de leur numéro** sur une base neuve. Ce sont les scripts d’origine, pas un historique géré automatiquement par une CLI. Ne pas rejouer le schéma initial à l’aveugle sur une base existante.
 
 | Fichier | Ce qu’il apporte |
 | --- | --- |
@@ -505,6 +529,8 @@ Utiliser un projet Supabase dédié. Appliquer **les dix fichiers de `gift-links
 | `008-noms-anglais.sql` | tout le schéma en anglais, par renommage |
 | `009-attribution-par-envoi.sql` | la campagne quitte le lien : elle appartient à l’envoi |
 | `010-vues-security-invoker.sql` | les vues lisent avec les droits de qui les interroge |
+| `011-ne-jamais-degrader.sql` | un repli n'écrase plus un corps déjà diffusé ; la date de fin ne peut que croître |
+| `012-retention.sql` | la purge : ce qu'on garde, et combien de temps |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
