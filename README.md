@@ -527,6 +527,17 @@ Ce dernier mérite l'attention. Il ne correspond à aucune erreur : l'appel rend
 
 Aucun jeton n'apparaît dans ces journaux. Le jeton d'un lien est l'accès à l'article premium : l'écrire dans un journal reviendrait à déposer la clé à côté de la porte. Les lignes nomment le service appelant et l'URL d'origine de l'article, qui sont publics. Les tests relisent chaque appel au journal pour le vérifier.
 
+On les retrouve dans le dashboard sous *Logs → Edge Functions*, ou en SQL depuis l'explorateur de logs. Les anciennes tables `function_logs` et `edge_logs` n'existent plus comme telles : tout passe par `logs` avec un filtre sur `source`.
+
+```sql
+SELECT timestamp, event_message
+FROM logs
+WHERE source = 'function_logs'
+  AND event_message LIKE '%aucun_article_exploitable%'
+ORDER BY timestamp DESC
+LIMIT 50;
+```
+
 La rétention des logs Supabase dépend du plan : un jour en Free, sept jours en Pro, vingt-huit en Team. Les passages de la purge nocturne, eux, sont consignés dans la table `cron.job_run_details`, qui n'est pas soumise à cette limite, et les lectures de liens dans `gift_link_opens`, conservées treize mois.
 
 ## Installer dans un autre environnement
