@@ -14,6 +14,10 @@ import {
   DUREE_SESSION_S, FORME_JETON, enteteDeconnexion, enteteSession, lireCookie,
   origineAcceptable, ouvrirJeton, scellerJeton,
 } from './session.mjs';
+import {
+  DUREE_ACCES_S, LONGUEUR_MIN_CLE, accesValide, attenteBrouillage, cleValide,
+  enteteAcces, enteteFinAcces, signerAcces,
+} from './acces.mjs';
 
 export const API_PAR_DEFAUT = 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links';
 
@@ -47,6 +51,55 @@ export function decouperAdresses(brut) {
   if (Array.isArray(brut)) brut = brut.join('\n');
   if (typeof brut !== 'string') return [];
   return [...new Set(brut.split(/\s+/).map((s) => s.trim()).filter((s) => s !== ''))];
+}
+
+// ── DEUX BARRIÈRES, ET ELLES NE PROTÈGENT PAS LA MÊME CHOSE.
+//
+//   1. la CLÉ D'ACCÈS, partagée : elle ouvre la PAGE. Elle ne donne aucun pouvoir.
+//   2. le JETON PERSONNEL : il crée les liens, et les met au nom de celui qui l'a saisi.
+//
+// LA PREMIÈRE GARDE AUSSI L'API, pas seulement l'affichage. Une barrière qui ne vit que dans
+// l'apparence de la page se contourne en appelant `/api/creer` à la main — ce qui en ferait une
+// décoration. `/api/session` et `/api/creer` la vérifient donc toutes les deux, en premier.
+const rideauOuvert = (env, request, maintenant) =>
+  accesValide(env.INTERFACE_SECRET_SESSION ?? '', lireCookie(request.headers.get('cookie'), 'acces'), maintenant);
+
+const RIDEAU_FERME = { erreur: "Clé d’accès requise.", etape: 'acces' };
+
+// ── /api/acces — la clé partagée, première barrière.
+export function handlerAcces({ env, maintenant = () => Date.now() }) {
+  return async (request) => {
+    const url = new URL(request.url);
+    const secret = env.INTERFACE_SECRET_SESSION ?? '';
+
+    if (request.method === 'DELETE') return json({ acces: false }, 200, { 'set-cookie': enteteFinAcces() });
+    if (request.method !== 'POST') return json({ erreur: 'méthode non autorisée' }, 405);
+    if (!origineAcceptable(request.headers.get('origin'), url.host)) {
+      journal('warn', 'origine_refusee', { chemin: url.pathname });
+      return json({ erreur: 'origine refusée' }, 403);
+    }
+
+    // LA CLÉ EST OBLIGATOIRE, PAS OPTIONNELLE. Sauter la barrière en silence quand sa variable manque
+    // est le genre de repli qui se découvre après coup.
+    const attendue = env.INTERFACE_CLE_ACCES ?? '';
+    if (secret.length < 32 || attendue.length < LONGUEUR_MIN_CLE) {
+      journal('error', 'configuration_incomplete', {
+        secret_session: secret.length >= 32, cle_acces: attendue.length >= LONGUEUR_MIN_CLE,
+      });
+      return json({ erreur: "Cette interface n'est pas configurée : prévenez la personne qui l'administre." }, 503);
+    }
+
+    let corps;
+    try { corps = await request.json(); } catch { corps = null; }
+    const fournie = corps && typeof corps === 'object' && typeof corps.cle === 'string' ? corps.cle : '';
+
+    if (!(await cleValide(fournie, attendue, secret))) {
+      await attenteBrouillage();
+      journal('warn', 'cle_acces_refusee', {});
+      return json({ erreur: 'Clé d’accès incorrecte.' }, 401);
+    }
+    return json({ acces: true }, 200, { 'set-cookie': enteteAcces(signerAcces(secret, maintenant() + DUREE_ACCES_S * 1000)) });
+  };
 }
 
 // ── /api/session — ouvrir, vérifier, fermer.
@@ -93,7 +146,11 @@ export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () 
     const cookie = lireCookie(request.headers.get('cookie'));
 
     if (request.method === 'GET') {
-      return json({ ouverte: ouvrirJeton(secret, cookie, maintenant()) !== null });
+      // La page a besoin des DEUX états pour savoir quel écran montrer.
+      return json({
+        acces: rideauOuvert(env, request, maintenant()),
+        ouverte: ouvrirJeton(secret, cookie, maintenant()) !== null,
+      });
     }
     if (request.method === 'DELETE') {
       return json({ ouverte: false }, 200, { 'set-cookie': enteteDeconnexion() });
@@ -110,6 +167,8 @@ export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () 
       journal('error', 'configuration_incomplete', { secret_session: false });
       return json({ erreur: "Cette interface n'est pas configurée : prévenez la personne qui l'administre." }, 503);
     }
+    // Le rideau d'abord : sans lui, on ne consomme même pas un appel au service pour éprouver un jeton.
+    if (!rideauOuvert(env, request, maintenant())) return json(RIDEAU_FERME, 403);
 
     let corps;
     try { corps = await request.json(); } catch { corps = null; }
@@ -145,6 +204,7 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
       journal('warn', 'origine_refusee', { chemin: url.pathname });
       return json({ erreur: 'origine refusée' }, 403);
     }
+    if (!rideauOuvert(env, request, maintenant())) return json(RIDEAU_FERME, 403);
     // LE JETON VIENT DU COOKIE DE LA PERSONNE, PAS DE L'ENVIRONNEMENT. Le déploiement n'en détient
     // aucun : ce qui est créé ici est attribué à celui ou celle qui a ouvert la session, et se révoque
     // pour lui seul.
@@ -152,7 +212,7 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
     // 403 ET NON 401 : l'interface distingue « votre session est finie, remettez votre jeton » de
     // « le service a refusé ce jeton », qui n'appelle pas du tout le même geste.
     const jeton = ouvrirJeton(env.INTERFACE_SECRET_SESSION ?? '', lireCookie(request.headers.get('cookie')), maintenant());
-    if (jeton === null) return json({ erreur: expliquerPanne(403) }, 403);
+    if (jeton === null) return json({ erreur: expliquerPanne(403), etape: 'jeton' }, 403);
 
     let corps;
     try { corps = await request.json(); } catch { corps = null; }
@@ -212,7 +272,7 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
     // plutôt que de laisser la personne recliquer sur un bouton qui ne peut plus rien produire.
     if (reponse.status === 401) {
       journal('warn', 'jeton_revoque_en_session', {});
-      return json({ erreur: expliquerPanne(401) }, 403, { 'set-cookie': enteteDeconnexion() });
+      return json({ erreur: expliquerPanne(401), etape: 'jeton' }, 403, { 'set-cookie': enteteDeconnexion() });
     }
 
     const refusesService = (charge?.rejected ?? []).map((r) => ({

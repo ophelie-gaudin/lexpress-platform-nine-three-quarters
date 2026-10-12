@@ -13,6 +13,35 @@ navigateur ──► /api/creer (Vercel) ──► POST /functions/v1/create-gif
    une fois, puis oublié    le temps de la requête
 ```
 
+## Deux barrières, et elles ne protègent pas la même chose
+
+| | Ce que c'est | Ce que ça ouvre | Ce que ça n'ouvre pas |
+| --- | --- | --- | --- |
+| **La clé d'accès** | partagée par l'équipe | la page | rien d'autre : aucun lien ne se crée avec |
+| **Le jeton personnel** | un par personne, celui de son client `api_clients` | la création de liens, à son nom | — |
+
+**La clé d'accès est un rideau, pas une serrure.** Elle ne donne aucun pouvoir, ne nomme personne, et
+ne protège pas le service : qui détient un jeton personnel peut de toute façon appeler l'API Supabase
+directement, sans passer par cette page. Ce qu'elle apporte réellement : elle retire de l'internet
+public un formulaire dont le bouton fabrique des accès à des articles payants. Plus de robot qui sonde
+`/api/session`, plus de page trouvable par hasard, et une faille future dans la page n'est plus
+atteignable par un anonyme. Elle réduit la surface, elle ne remplace pas le jeton.
+
+**Elle garde l'API, pas seulement l'affichage.** `/api/session` et `/api/creer` la vérifient en
+premier : un cookie de session parfaitement valide sans le rideau est refusé. Une barrière qui ne vit
+que dans l'apparence de la page se contournerait en appelant `/api/creer` à la main.
+
+**Elle est obligatoire.** Sans `INTERFACE_CLE_ACCES`, l'interface refuse tout le monde et le dit. Une
+couche de sécurité qu'on saute en silence quand sa variable manque est le genre de repli qui se
+découvre après coup.
+
+**Deviner la clé coûte cher, par construction.** Un jeton de 64 hexadécimaux est hors de portée d'une
+recherche exhaustive ; une clé choisie par un humain, non. Sur une plateforme sans état comme Vercel,
+on ne peut pas compter les tentatives de façon fiable — chaque requête peut tomber sur une instance
+neuve. Alors on ne compte pas : on fait payer. Chaque essai coûte un `scrypt` d'environ un quart de
+seconde, soit sept heures de machine pour cent mille essais. **Ça ne dispense pas d'une clé longue** :
+prenez-la générée, pas inventée.
+
 ## Chacun son jeton
 
 **Le déploiement ne détient aucun jeton de service.** Chaque personne entre le sien ; l'interface le
@@ -79,7 +108,7 @@ problème**, ni le destinataire, ni l'expéditeur. L'interface, elle, le dit.
 node interface/serveur-local.mjs
 ```
 
-Puis <http://localhost:3000>. Le jeton à coller est affiché au démarrage : soixante-quatre `d`.
+Puis <http://localhost:3000>. La clé d'accès et le jeton à coller sont affichés au démarrage.
 
 **Le mode démonstration est le défaut, et c'est délibéré.** Le service est remplacé par une réponse
 fabriquée sur place : aucune requête ne sort de la machine, aucun lien réel n'est créé. Lancer un
@@ -102,15 +131,15 @@ Dans Vercel → le projet → **Settings → Environment Variables** :
 | Variable | Valeur | Comment l'obtenir |
 | --- | --- | --- |
 | `INTERFACE_SECRET_SESSION` | la clé qui scelle les cookies | `openssl rand -hex 32` |
+| `INTERFACE_CLE_ACCES` | la clé d'accès partagée de l'équipe | `openssl rand -base64 18` — **16 caractères au minimum**, et une clé tirée au hasard plutôt qu'inventée |
 
 À marquer **Sensitive** : une variable marquée ainsi ne peut plus être relue depuis le tableau de bord.
 `GIFT_API_URL` est facultative — sans elle, l'interface appelle la fonction de production.
 
-C'est tout. Aucun jeton de service dans Vercel : chaque personne apporte le sien.
+Aucun jeton de service dans Vercel : chaque personne apporte le sien.
 
-**Une configuration incomplète ferme la porte, elle ne l'ouvre pas.** Sans clé de scellement, la page
-répond « cette interface n'est pas configurée » et refuse tout le monde — le repli naturel serait de
-poser le jeton en clair dans le cookie, exactement ce qu'on refuse.
+**Une configuration incomplète ferme la porte, elle ne l'ouvre pas.** S'il manque l'une des deux, la
+page répond « cette interface n'est pas configurée » et refuse tout le monde.
 
 ### 2. Un jeton par personne
 
@@ -167,14 +196,15 @@ fabriquer des accès à des articles payants. Pour éprouver une préversion, lu
 
 Vérifier ensuite, dans l'ordre :
 
-1. la page demande un jeton ;
-2. une valeur de travers — « bonjour » — est refusée sur sa forme, immédiatement ;
-3. un jeton bien formé mais inconnu (64 `0`, par exemple) est refusé par le service, avec un message
+1. la page demande la clé d'accès, et une clé fausse est refusée ;
+2. la bonne clé fait apparaître l'écran du jeton ;
+3. une valeur de travers — « bonjour » — est refusée sur sa forme, immédiatement ;
+4. un jeton bien formé mais inconnu (64 `0`, par exemple) est refusé par le service, avec un message
    qui parle de révocation ;
-4. votre jeton ouvre le formulaire ;
-5. `https://www.lexpress.fr/politique/un-vieil-article_1302698.html` est refusé **avec sa phrase
+5. votre jeton ouvre le formulaire ;
+6. `https://www.lexpress.fr/politique/un-vieil-article_1302698.html` est refusé **avec sa phrase
    d'explication**, sans appeler le service ;
-6. un vrai article rend un lien — **et ce lien est un vrai accès**. Mettre **1 jour** plutôt que 15 :
+7. un vrai article rend un lien — **et ce lien est un vrai accès**. Mettre **1 jour** plutôt que 15 :
    assez pour vérifier, et peu à laisser ouvert derrière soi.
 
 ### 4. Couper un accès
@@ -182,6 +212,7 @@ Vérifier ensuite, dans l'ordre :
 | Problème | Geste | Effet |
 | --- | --- | --- |
 | une personne s'en va, ou son jeton a fuité | `SELECT public.revoke_api_client('interface-claire');` | elle ne crée plus rien, **à la demande suivante**, et personne d'autre n'est touché |
+| la clé d'accès a circulé trop largement | changer `INTERFACE_CLE_ACCES`, redéployer | les rideaux déjà ouverts le restent trente jours — pour les refermer tout de suite, changer aussi `INTERFACE_SECRET_SESSION` |
 | il faut fermer toutes les sessions d'un coup | changer `INTERFACE_SECRET_SESSION`, redéployer | tous les cookies en cours deviennent indéchiffrables ; chacun recolle son jeton |
 | il faut tout arrêter | révoquer chaque client `interface-*` | plus aucun lien créé depuis l'interface |
 
@@ -204,6 +235,7 @@ le jeton d'un lien EST l'accès à l'article premium. On nomme les adresses, qui
 
 | `evenement` | Ce qui s'est passé |
 | --- | --- |
+| `cle_acces_refusee` | quelqu'un s'est trompé de clé — ou cherche. Une rafale ici est le signal à surveiller |
 | `jeton_mal_forme` | une valeur collée de travers ; refusée sans appeler le service |
 | `jeton_refuse` | le service ne reconnaît pas ce jeton, ou il est révoqué |
 | `jeton_revoque_en_session` | un jeton valide à l'entrée a été révoqué depuis ; la session est effacée |
@@ -228,6 +260,8 @@ Les contrôles qui comptent, et qu'on peut casser exprès pour les voir échouer
 
 - **sans session, le service n'est pas appelé** — pas « l'appel échoue » : pas appelé. Le test compte
   les appels sortants et exige zéro ;
+- **la clé d'accès garde l'API** : un cookie de session valide sans le rideau est refusé ;
+- **et elle n'autorise rien** : le rideau seul ne crée aucun lien ;
 - **le jeton n'est pas en clair dans le cookie**, et le serveur le retrouve pourtant intact ;
 - **c'est le jeton de la personne qui part au service** : le test pose un jeton leurre dans
   l'environnement et vérifie qu'il n'est jamais employé ;

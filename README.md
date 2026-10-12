@@ -17,8 +17,9 @@ le peuvent tout autant.
 | **offrir des articles depuis votre service** — appeler l’API depuis une chaîne n8n, une newsletter, un outil interne | **Partie I**, ci-dessous |
 | **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
-L’interface web demande votre jeton une fois, le scelle dans un cookie chiffré et n’y revient pas de
-la semaine : vous ne composez aucune requête, et les liens restent enregistrés à votre nom. La Partie I se lit en dix minutes et suppose qu’on sache ranger un jeton et
+L’interface web demande une clé d’accès partagée, puis votre jeton — qu’elle scelle dans un cookie
+chiffré et ne redemande pas de la semaine. Vous ne composez aucune requête, et les liens restent
+enregistrés à votre nom. La Partie I se lit en dix minutes et suppose qu’on sache ranger un jeton et
 composer une requête HTTP. La Partie II suppose les accès au projet Supabase et à la page de lecture.
 
 Le code est là pour qui veut regarder : le SQL dans `gift-links/supabase/`, la fonction d’API dans
@@ -307,7 +308,7 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 159 de l’interface web.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 191 de l’interface web.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
@@ -344,6 +345,7 @@ Il existe une seule page dynamique de lecture, pas une page à générer par art
 | `build-gift-links-function.mjs` | Assemblage de la fonction déployable |
 | `validate-gift-links-*.mjs` | Tests locaux |
 | `public/`, `api/`, `interface/` | L'interface web : page, fonctions serveur, serveur local de démonstration |
+| `interface/acces.mjs` | La clé d'accès partagée — première barrière, qui garde l'API et pas seulement la page |
 | `validate-interface.mjs` | Tests de l'interface — dont « sans session, le service n'est pas appelé » |
 | `interface/README.md` | Déploiement Vercel, variables, révocation |
 | `docs/frontend.md` | Contrat à respecter par la page Lovable |

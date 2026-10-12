@@ -10,15 +10,17 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { handlerCreer, handlerSession } from './handlers.mjs';
+import { handlerAcces, handlerCreer, handlerSession } from './handlers.mjs';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const RACINE = new URL('../public/', import.meta.url).pathname;
 const DEMO = !process.env.GIFT_API_REEL;
 const JETON_DEMO = 'd'.repeat(64);
+const CLE_DEMO = 'cle-de-demonstration-locale';
 
 const env = {
   INTERFACE_SECRET_SESSION: process.env.INTERFACE_SECRET_SESSION ?? 'secret-local-de-demonstration-sans-valeur',
+  INTERFACE_CLE_ACCES: process.env.INTERFACE_CLE_ACCES ?? CLE_DEMO,
   GIFT_API_URL: process.env.GIFT_API_URL,
 };
 
@@ -45,6 +47,7 @@ const serviceDemo = async (_url, options) => {
 };
 
 const reseau = DEMO ? serviceDemo : globalThis.fetch;
+const acces = handlerAcces({ env });
 const session = handlerSession({ env, fetch: reseau });
 const creer = handlerCreer({ env, fetch: reseau });
 
@@ -56,7 +59,10 @@ createServer(async (req, res) => {
     const corps = req.method === 'GET' || req.method === 'DELETE' ? undefined
       : await new Promise((ok) => { const m = []; req.on('data', (c) => m.push(c)); req.on('end', () => ok(Buffer.concat(m))); });
     const requete = new Request(`http://localhost:${PORT}${req.url}`, { method: req.method, headers: req.headers, body: corps });
-    const reponse = await (url.pathname === '/api/session' ? session : creer)(requete);
+    const routes = { '/api/acces': acces, '/api/session': session, '/api/creer': creer };
+    const route = routes[url.pathname];
+    if (!route) { res.writeHead(404, { 'content-type': 'application/json' }).end('{"erreur":"inconnu"}'); return; }
+    const reponse = await route(requete);
     res.writeHead(reponse.status, Object.fromEntries(reponse.headers));
     res.end(await reponse.text());
     return;
@@ -72,6 +78,6 @@ createServer(async (req, res) => {
 }).listen(PORT, () => {
   console.log(`Interface sur http://localhost:${PORT}`);
   console.log(DEMO
-    ? `MODE DÉMONSTRATION : aucun appel réseau, aucun lien réel créé.\nJeton à coller : ${JETON_DEMO}`
+    ? `MODE DÉMONSTRATION : aucun appel réseau, aucun lien réel créé.\nClé d'accès : ${env.INTERFACE_CLE_ACCES}\nJeton à coller : ${JETON_DEMO}`
     : 'ATTENTION : mode réel — le jeton saisi sera envoyé au service, et les liens créés seront de VRAIS accès à des articles payants.');
 });

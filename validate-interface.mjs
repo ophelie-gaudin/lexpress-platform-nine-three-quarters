@@ -20,7 +20,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { handlerCreer, handlerSession, sonderJeton, decouperAdresses, MAX_ADRESSES, API_PAR_DEFAUT } from './interface/handlers.mjs';
+import { handlerAcces } from './interface/handlers.mjs';
 import { FORME_JETON, ouvrirJeton, scellerJeton, lireCookie, origineAcceptable } from './interface/session.mjs';
+import { LONGUEUR_MIN_CLE, accesValide, cleValide, signerAcces } from './interface/acces.mjs';
 import { expliquer, expliquerPanne, TRADUCTIONS } from './interface/motifs.mjs';
 import { titreDepuisAdresse, rubriqueDepuisAdresse, decrireEtat, formaterEcheance } from './interface/presentation.mjs';
 import { CLES_ACCEPTEES } from './gift-links/functions/_shared/corps.mjs';
@@ -31,10 +33,11 @@ let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 const JETON = 'f3'.repeat(32);
 const JETON_AUTRE = 'ab'.repeat(32);
 const SECRET = 'x'.repeat(48);
+const CLE = 'la-cle-partagee-de-lequipe-2026';
 // LE LEURRE. Un jeton posé dans l'environnement du déploiement : il ne doit JAMAIS partir au service.
 // S'il partait, tous les liens seraient attribués au déploiement et non à la personne.
 const JETON_LEURRE = '99'.repeat(32);
-const ENV = { INTERFACE_SECRET_SESSION: SECRET, GIFT_SERVICE_TOKEN: JETON_LEURRE };
+const ENV = { INTERFACE_SECRET_SESSION: SECRET, INTERFACE_CLE_ACCES: CLE, GIFT_SERVICE_TOKEN: JETON_LEURRE };
 const URL_OK = 'https://www.lexpress.fr/societe/religion/a-lyon-lecole-des-chartreux-XGLQ6NY6CJD6LLBLBBMEF7A2V4';
 const URL_OK2 = 'https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-RQOLMEM5NZE3BNTWPJEEGC5B5Y';
 
@@ -49,11 +52,17 @@ const sondeur = (statut) => {
   } };
 };
 
-const requete = (chemin, { methode = 'POST', corps, cookie, origine } = {}) => new Request(`https://liens.lexpress.fr${chemin}`, {
+const cookieAcces = (decalageMs = 3600_000) => `acces=${signerAcces(SECRET, Date.now() + decalageMs)}`;
+
+/**
+ * Par défaut, les requêtes de ce fichier portent le cookie du RIDEAU : les blocs qui suivent
+ * éprouvent la seconde barrière, pas la première. Passer `rideau: false` pour l'ôter.
+ */
+const requete = (chemin, { methode = 'POST', corps, cookie, origine, rideau = true } = {}) => new Request(`https://liens.lexpress.fr${chemin}`, {
   method: methode,
   headers: {
     'content-type': 'application/json',
-    ...(cookie ? { cookie } : {}),
+    ...((cookie || rideau) ? { cookie: [rideau ? cookieAcces() : null, cookie].filter(Boolean).join('; ') } : {}),
     ...(origine ? { origin: origine } : {}),
   },
   ...(corps === undefined || methode === 'GET' || methode === 'DELETE' ? {} : { body: JSON.stringify(corps) }),
@@ -89,7 +98,91 @@ const LIEN_APERCU = { ...LIEN_COMPLET, url: URL_OK2, arc_id: 'RQOLMEM5NZE3BNTWPJ
 // qu'un article a été retiré. L'interface ne peut pas le deviner, et ne doit pas essayer.
 const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWDWDWDWDWDWDWDWDWDWDWDWD';
 
-// ── LA PORTE. Chacun son jeton, scellé dans un cookie chiffré.
+// ── LA PREMIÈRE BARRIÈRE : LA CLÉ D'ACCÈS PARTAGÉE.
+//
+// Elle ouvre la PAGE, elle ne donne aucun pouvoir. Ce qui compte dans ces contrôles : qu'elle garde
+// aussi l'API. Une barrière qui ne vit que dans l'apparence de la page se contourne en appelant
+// `/api/creer` à la main — ce qui en ferait une décoration.
+{
+  const ouvrir = handlerAcces({ env: ENV });
+
+  const refus = (await avecJournal(() => ouvrir(requete('/api/acces', { corps: { cle: 'la-cle-partagee-de-lequipe-2025' } })))).resultat;
+  check(refus.status === 401, 'une clé fausse reçoit 401');
+  check(!refus.headers.get('set-cookie'), 'et ne pose aucun cookie');
+
+  const ok = await ouvrir(requete('/api/acces', { corps: { cle: CLE } }));
+  const biscuit = ok.headers.get('set-cookie');
+  check(ok.status === 200 && (await ok.json()).acces === true, 'la bonne clé ouvre le rideau');
+  for (const attribut of ['HttpOnly', 'Secure', 'SameSite=Strict'])
+    check(biscuit.includes(attribut), `le cookie du rideau porte ${attribut}`);
+  const valeur = biscuit.slice('acces='.length).split(';')[0];
+  check(!biscuit.includes(CLE) && !Buffer.from(valeur.split('.')[0], 'base64url').toString().includes(CLE),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la clé n’est pas recopiée dans le cookie — celui-ci ne porte qu’une date de fin');
+  check(accesValide(SECRET, valeur), 'et le cookie rendu est accepté ensuite');
+  check(!accesValide(SECRET, signerAcces(SECRET, Date.now() - 1000)), 'un rideau périmé est refusé');
+  check(!accesValide(SECRET, `${valeur.split('.')[0]}.signatureBidon`), 'une signature retouchée est refusée');
+  check(!accesValide('y'.repeat(48), valeur), 'un cookie signé avec un autre secret est refusé');
+  check(!accesValide(SECRET, 'nimportequoi') && !accesValide(SECRET, null), 'un cookie bricolé est un refus ordinaire');
+
+  // Fermeture par défaut : une couche de sécurité qu'on saute en silence est le pire des deux mondes.
+  for (const [cas, env] of [
+    ['clé absente', { INTERFACE_SECRET_SESSION: SECRET }],
+    ['clé trop courte', { INTERFACE_SECRET_SESSION: SECRET, INTERFACE_CLE_ACCES: 'courte' }],
+  ]) {
+    const { resultat } = await avecJournal(() => handlerAcces({ env })(requete('/api/acces', { corps: { cle: 'courte' } })));
+    check(resultat.status === 503, `C’EST LA PROPRIÉTÉ QUI COMPTE : ${cas} → 503. La barrière ne se saute pas en silence quand sa variable manque`);
+    check(!resultat.headers.get('set-cookie'), `${cas} n’ouvre rien`);
+  }
+  check((await cleValide('courte', 'courte', SECRET)) === false, `une clé de moins de ${LONGUEUR_MIN_CLE} caractères ne vaut rien, même si elle correspond`);
+  check((await cleValide('', '', SECRET)) === false, 'une clé vide ne correspond jamais à une configuration vide');
+
+  const ailleurs = (await avecJournal(() => ouvrir(requete('/api/acces', { corps: { cle: CLE }, origine: 'https://evil.example' })))).resultat;
+  check(ailleurs.status === 403, 'une requête venue d’une autre origine est refusée');
+  check(/Max-Age=0/.test((await ouvrir(requete('/api/acces', { methode: 'DELETE' }))).headers.get('set-cookie')), 'le rideau se referme');
+
+  // LE COÛT. Sur une plateforme sans état, on ne peut pas compter les tentatives : on les fait payer.
+  const acces = readFileSync('./interface/acces.mjs', 'utf8');
+  const N = Number(acces.match(/N:\s*(\d+)/)[1]);
+  check(N >= 65536, `chaque essai coûte un calcul scrypt sérieux (N = ${N}) — une clé choisie par un humain est devinable, et un compteur en mémoire ne voit rien sur Vercel`);
+}
+
+// ── LE RIDEAU GARDE L'API, PAS SEULEMENT L'AFFICHAGE.
+{
+  const service = serviceFeint({ corps: { links: [LIEN_COMPLET], rejected: [] } });
+  const sonde = sondeur(400);
+
+  const jetonSansRideau = (await avecJournal(() => handlerSession({ env: ENV, fetch: sonde.fetch })(
+    requete('/api/session', { corps: { jeton: JETON }, rideau: false })))).resultat;
+  check(jetonSansRideau.status === 403 && (await jetonSansRideau.json()).etape === 'acces',
+    'sans clé d’accès, on ne peut même pas présenter un jeton');
+  check(sonde.appels.length === 0, 'et le service n’est pas appelé pour l’éprouver');
+
+  // LE CAS QUI PROUVE QUE LA BARRIÈRE N'EST PAS DÉCORATIVE : une session parfaitement valide, mais
+  // pas de rideau. Si ça passait, il suffirait d'appeler /api/creer à la main pour l'ignorer.
+  const creerSansRideau = (await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
+    requete('/api/creer', { corps: { adresses: URL_OK }, cookie: cookieValide(), rideau: false })))).resultat;
+  check(creerSansRideau.status === 403 && (await creerSansRideau.json()).etape === 'acces',
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un cookie de session VALIDE ne suffit pas sans le rideau — la barrière garde l’API, pas l’apparence de la page');
+  check(service.appels.length === 0, 'et aucun appel ne part au service');
+
+  const rideauPerime = (await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
+    new Request('https://liens.lexpress.fr/api/creer', { method: 'POST', headers: { 'content-type': 'application/json',
+      cookie: `${signerAcces(SECRET, Date.now() - 1000).replace(/^/, 'acces=')}; ${cookieValide()}` },
+      body: JSON.stringify({ adresses: URL_OK }) })))).resultat;
+  check(rideauPerime.status === 403, 'un rideau périmé referme l’API, même avec une session encore valide');
+
+  // L'INVERSE AUSSI : le rideau seul ne crée rien. Il ne donne aucun pouvoir, c'est tout son sens.
+  const rideauSeul = (await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
+    requete('/api/creer', { corps: { adresses: URL_OK } })))).resultat;
+  check(rideauSeul.status === 403 && (await rideauSeul.json()).etape === 'jeton',
+    'C’EST L’AUTRE MOITIÉ : la clé d’accès seule ne crée aucun lien — elle ouvre la page, elle n’autorise rien');
+  check(service.appels.length === 0, 'et là non plus rien ne part au service');
+
+  const etats = await (await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET' }))).json();
+  check(etats.acces === true && etats.ouverte === false, 'la page sait quelle barrière reste à franchir, et c’est le serveur qui le lui dit');
+}
+
+// ── LA SECONDE BARRIÈRE : chacun son jeton, scellé dans un cookie chiffré.
 {
   // La forme d'abord : une valeur collée de travers n'a pas à consommer un appel au service.
   const sonde = sondeur(400);
@@ -410,7 +503,7 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
 
   for (const [ou, contenu] of [['la page', page], ['le script', script], ['la feuille de style', style]]) {
     check(!/GIFT_SERVICE_TOKEN|x-gift-service-token/.test(contenu), `C’EST LA PROPRIÉTÉ QUI COMPTE : ${ou} ne nomme même pas le jeton de service`);
-    check(!/supabase\.co|INTERFACE_SECRET_SESSION/.test(contenu), `${ou} ne connaît ni la base ni la clé de scellement`);
+    check(!/supabase\.co|INTERFACE_SECRET_SESSION|INTERFACE_CLE_ACCES/.test(contenu), `${ou} ne connaît ni la base ni les secrets du déploiement`);
   }
   // On regarde le CODE, pas les commentaires : ce fichier-ci explique justement pourquoi `innerHTML`
   // est proscrit, et un test qui ne sait pas distinguer les deux interdirait de l’écrire.
@@ -418,6 +511,11 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(!/localStorage|sessionStorage|document\.cookie/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le script ne range le jeton nulle part — ni en mémoire du navigateur, ni dans un cookie qu’il pourrait relire. Il le poste une fois, le serveur le scelle, et la page ne le revoit jamais');
   check(/value = ''/.test(codeSeul), 'et il vide le champ de saisie : un jeton ne reste pas affiché dans une page ouverte');
+  check(/!depart\.acces \? 'acces'/.test(codeSeul),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : au chargement, le rideau passe AVANT la session — les deux cookies n’ont pas la même durée de vie, et sans cette priorité la page montrerait le formulaire à quelqu’un dont chaque demande sera refusée');
+  check(/\/api\/acces[\s\S]*method: 'DELETE'/.test(codeSeul.replace(/\n/g, '\n')) || /fetch\('\/api\/acces', \{ method: 'DELETE' \}\)/.test(codeSeul),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : « Fermer la session » referme AUSSI le rideau — sinon, sur un poste partagé, le suivant est dispensé de la clé');
+  check(!/etape === 'demande'[\s\S]{0,200}localStorage/.test(codeSeul), 'et la page ne mémorise aucune étape franchie de son côté : c’est le serveur qui la dit');
   check(!/innerHTML|insertAdjacentHTML|document\.write/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le script n’insère aucun HTML — les libellés affichés viennent de ce que la personne a collé, et `textContent` ne les interprète pas');
   check(/textContent/.test(codeSeul), 'il remplit `textContent`, ce qui échappe tout seul');
@@ -428,6 +526,9 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(/frame-ancestors 'none'/.test(config.headers[0].headers.find((h) => h.key === 'Content-Security-Policy').value),
     'la page ne peut pas être enchâssée dans un autre site');
 
+  const adaptateurAcces = readFileSync('./api/acces.mjs', 'utf8');
+  check(adaptateurAcces.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//')).length <= 4,
+    'l’adaptateur du rideau ne contient aucune logique non plus');
   check(/process\.env/.test(adaptateurCreer) && /handlerCreer/.test(adaptateurCreer),
     'l’adaptateur Vercel branche l’environnement sur le handler testé');
   check(adaptateurCreer.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//')).length <= 4,

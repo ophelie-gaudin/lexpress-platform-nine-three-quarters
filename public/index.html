@@ -18,12 +18,26 @@
 
 <main>
 
+  <!-- ÉCRAN 0 — le rideau. Une clé partagée, qui n'ouvre que la page. -->
+  <section id="ecran-acces" hidden>
+    <h2>Clé d'accès</h2>
+    <p>Cette page est réservée à l'équipe. La clé ci-dessous ouvre la page ; elle ne permet pas de
+    créer de liens — il faudra ensuite votre jeton personnel.</p>
+    <form id="form-acces">
+      <label for="cle">Clé d'accès de l'équipe</label>
+      <input type="password" id="cle" name="cle" autocomplete="off" required>
+      <button type="submit" class="principal">Continuer</button>
+    </form>
+    <p id="attente-acces" class="attente" role="status" hidden>Vérification…</p>
+    <p id="erreur-acces" class="erreur" role="alert" hidden></p>
+  </section>
+
   <!-- ÉCRAN 1 — la porte. Chacun son jeton : ce que vous créez porte votre nom. -->
   <section id="ecran-jeton" hidden>
     <h2>Votre jeton</h2>
-    <p>Cette page fabrique des accès à des articles payants. <strong>Chaque personne a son propre
-    jeton</strong> : les liens que vous créez sont enregistrés à votre nom, et votre accès se coupe
-    sans couper celui des autres.</p>
+    <p>Deuxième et dernière étape. Cette page fabrique des accès à des articles payants.
+    <strong>Chaque personne a son propre jeton</strong> : les liens que vous créez sont enregistrés à
+    votre nom, et votre accès se coupe sans couper celui des autres.</p>
     <form id="form-jeton">
       <label for="jeton">Jeton personnel — 64 caractères</label>
       <input type="password" id="jeton" name="jeton" autocomplete="off" autocapitalize="off"

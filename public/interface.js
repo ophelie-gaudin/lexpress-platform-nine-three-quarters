@@ -7,6 +7,7 @@
 // des nœuds et on remplit `textContent`.
 
 const $ = (id) => document.getElementById(id);
+const ecranAcces = $('ecran-acces');
 const ecranJeton = $('ecran-jeton');
 const ecranDemande = $('ecran-demande');
 const resultats = $('resultats');
@@ -28,26 +29,53 @@ function afficherErreur(cible, message) {
 
 // ── La porte.
 
-async function etatSession() {
+async function etat() {
   try {
     const r = await fetch('/api/session', { headers: { accept: 'application/json' } });
     const d = await r.json();
-    return d?.ouverte === true;
-  } catch { return false; }
+    return { acces: d?.acces === true, ouverte: d?.ouverte === true };
+  } catch { return { acces: false, ouverte: false }; }
 }
 
-function basculerVers(ouverte, message) {
-  montrer(ecranJeton, !ouverte);
-  montrer(ecranDemande, ouverte);
+/**
+ * Trois écrans, un seul visible. `etape` vaut 'acces', 'jeton' ou 'demande' — et c'est le SERVEUR qui
+ * la dit : la page ne décide jamais toute seule qu'une barrière est franchie.
+ */
+function afficherEtape(etape, message) {
+  montrer(ecranAcces, etape === 'acces');
+  montrer(ecranJeton, etape === 'jeton');
+  montrer(ecranDemande, etape === 'demande');
   // « Fermer la session » n'a aucun sens tant qu'aucune session n'est ouverte.
-  montrer($('bouton-sortie').parentElement, ouverte);
-  if (!ouverte) {
+  montrer($('bouton-sortie').parentElement, etape === 'demande');
+  if (etape === 'acces') { afficherErreur($('erreur-acces'), message); $('cle').value = ''; $('cle').focus(); }
+  if (etape === 'jeton') {
     afficherErreur($('erreur-jeton'), message);
     // Le champ est vidé dans tous les cas : un jeton ne doit pas rester affiché dans une page ouverte.
     $('jeton').value = '';
     $('jeton').focus();
   }
 }
+
+$('form-acces').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  afficherErreur($('erreur-acces'), null);
+  // La vérification est VOLONTAIREMENT lente — une fraction de seconde de calcul par essai, pour que
+  // deviner la clé coûte cher. Sans ce mot, l'attente passerait pour une page bloquée.
+  montrer($('attente-acces'), true);
+  try {
+    const r = await fetch('/api/acces', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cle: $('cle').value }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.acces) { $('cle').value = ''; afficherEtape('jeton'); return; }
+    afficherErreur($('erreur-acces'), d.erreur ?? 'Accès impossible.');
+  } catch {
+    afficherErreur($('erreur-acces'), "La page n'a pas pu joindre le serveur. Réessayez dans un instant.");
+  } finally {
+    montrer($('attente-acces'), false);
+  }
+});
 
 $('form-jeton').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -62,7 +90,8 @@ $('form-jeton').addEventListener('submit', async (e) => {
       body: JSON.stringify({ jeton: $('jeton').value.trim() }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.ouverte) { $('jeton').value = ''; basculerVers(true); $('adresses').focus(); return; }
+    if (r.ok && d.ouverte) { $('jeton').value = ''; afficherEtape('demande'); $('adresses').focus(); return; }
+    if (r.status === 403 && d.etape === 'acces') { afficherEtape('acces', 'La clé d’accès a expiré. Entrez-la de nouveau.'); return; }
     afficherErreur($('erreur-jeton'), d.erreur ?? 'Connexion impossible.');
   } catch {
     // Un échec de réseau n'est pas un jeton refusé : le dire autrement enverrait chercher une faute
@@ -74,9 +103,14 @@ $('form-jeton').addEventListener('submit', async (e) => {
 });
 
 $('bouton-sortie').addEventListener('click', async () => {
-  await fetch('/api/session', { method: 'DELETE' }).catch(() => {});
+  // On ferme les DEUX : sur un poste partagé, laisser le rideau ouvert dispenserait le suivant de la
+  // clé, et « fermer la session » ne fermerait qu'à moitié.
+  await Promise.all([
+    fetch('/api/session', { method: 'DELETE' }).catch(() => {}),
+    fetch('/api/acces', { method: 'DELETE' }).catch(() => {}),
+  ]);
   resultats.replaceChildren();
-  basculerVers(false);
+  afficherEtape('acces');
 });
 
 // ── La demande.
@@ -190,7 +224,10 @@ $('form-demande').addEventListener('submit', async (e) => {
       body: JSON.stringify({ adresses: $('adresses').value, jours: Number($('jours').value) }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.status === 403) { basculerVers(false, d.erreur ?? 'Session expirée. Entrez de nouveau votre jeton.'); return; }
+    if (r.status === 403) {
+      afficherEtape(d.etape === 'acces' ? 'acces' : 'jeton', d.erreur ?? 'Session expirée. Entrez de nouveau votre jeton.');
+      return;
+    }
     if (d.liens || d.refuses || d.panne) {
       afficherResultats(d);
       // Les résultats s'écrivent sous le formulaire : sur un petit écran, ils sont hors de vue et la
@@ -207,4 +244,8 @@ $('form-demande').addEventListener('submit', async (e) => {
   }
 });
 
-basculerVers(await etatSession());
+// LE RIDEAU D'ABORD, MÊME SI LA SESSION EST ENCORE OUVERTE. Les deux cookies ne vivent pas la même
+// durée — sept jours pour la session, trente pour le rideau, et on peut fermer l'un sans l'autre. Sans
+// cette priorité, la page afficherait le formulaire à quelqu'un dont chaque demande sera refusée.
+const depart = await etat();
+afficherEtape(!depart.acces ? 'acces' : depart.ouverte ? 'demande' : 'jeton');
