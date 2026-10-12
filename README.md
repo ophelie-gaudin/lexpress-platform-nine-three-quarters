@@ -281,6 +281,22 @@ responsable du service — les deux vues existent, elles sont décrites en Parti
 Cette partie suppose les accès au projet Supabase, au projet Lovable qui héberge la page de lecture,
 et au jeton de lecture Arc. Elle n’est pas nécessaire pour créer des liens.
 
+## Les deux branches
+
+| Branche | Rôle |
+| --- | --- |
+| `main` | le travail : code, tests, revues. Déployée en **préversion** seulement |
+| `production` | ce que les utilisateurs de l'interface web ont sous les yeux |
+
+Mettre en ligne est un geste à part, jamais un effet de bord d'un `push` :
+
+```sh
+git switch production && git merge --ff-only main && git push origin production
+```
+
+Ça ne concerne que l'interface web. La fonction Edge et le SQL se déploient autrement — voir
+« Installer dans un autre environnement » et `interface/README.md`.
+
 ## Démarrage local
 
 Prérequis : Node.js 22 ou supérieur et npm. Depuis la racine du dépôt :

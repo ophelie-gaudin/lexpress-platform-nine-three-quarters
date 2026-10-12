@@ -128,10 +128,44 @@ L'étape 5 du README (la vérification par `curl`) **crée un vrai lien** : soit
 qu'on accepte d'offrir, soit on s'en passe et on laisse la personne vérifier en se connectant — un jeton
 refusé est refusé à l'entrée, avec son message.
 
-### 3. Déployer
+### 3. Déployer depuis `production`, pas depuis `main`
 
-Connecter le dépôt à Vercel et déployer. Aucun réglage de framework : `vercel.json` dit déjà qu'il n'y
-a rien à construire. Vérifier ensuite, dans l'ordre :
+Connecter le dépôt à Vercel. Aucun réglage de framework : `vercel.json` dit déjà qu'il n'y a rien à
+construire.
+
+**Puis changer la branche suivie** : *Project Settings → Environments → Production → Branch Tracking*,
+remplacer `main` par `production`, enregistrer.
+
+| Branche | Ce qu'elle est | Ce que Vercel en fait |
+| --- | --- | --- |
+| `main` | le travail en cours, les tests, les revues | un déploiement de **préversion**, à une URL à part |
+| `production` | ce que les utilisateurs ont sous les yeux | **le** déploiement, à l'URL qu'ils connaissent |
+
+Mettre en ligne devient alors un geste explicite, et réversible :
+
+```sh
+git switch production && git merge --ff-only main && git push origin production
+```
+
+`--ff-only` est volontaire : il refuse d'avancer si `production` a divergé. Mieux vaut un refus qu'une
+fusion silencieuse de deux histoires sur la branche que les gens utilisent.
+
+Revenir en arrière ne passe pas forcément par Git : dans Vercel, *Deployments* → le déploiement
+précédent → **Promote to Production** remet l'ancienne version en ligne en quelques secondes, sans
+toucher au dépôt.
+
+**Les variables d'environnement sont à poser sur `Production` seulement.** Une préversion sans
+`INTERFACE_SECRET_SESSION` refuse alors tout le monde en disant « cette interface n'est pas
+configurée » — c'est le comportement voulu : une branche en cours de travail ne doit pas pouvoir
+fabriquer des accès à des articles payants. Pour éprouver une préversion, lui donner une valeur
+`Preview` distincte, jamais la même.
+
+> **Le dépôt est public.** Par défaut, Vercel construit les préversions des *pull requests* venues de
+> dépôts forkés, et ce code-là peut lire les variables d'environnement. Activer **Git fork protection**
+> dans *Project Settings → Security*. C'est le réglage le plus important de cette page après le choix
+> de la branche.
+
+Vérifier ensuite, dans l'ordre :
 
 1. la page demande un jeton ;
 2. une valeur de travers — « bonjour » — est refusée sur sa forme, immédiatement ;
