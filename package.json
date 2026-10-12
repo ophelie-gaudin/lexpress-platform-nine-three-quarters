@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "node build-gift-links-function.mjs",
-    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs"
+    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs && node validate-interface.mjs",
+    "interface": "node interface/serveur-local.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8"

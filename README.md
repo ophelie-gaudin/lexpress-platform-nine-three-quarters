@@ -9,18 +9,20 @@ un article payant, ouvert à qui reçoit le lien et fermé à la date dite.
 N’importe quel service peut l’appeler : l’agent WhatsApp le fait déjà, une newsletter ou une campagne
 le peuvent tout autant.
 
-## Deux lecteurs, deux parcours
+## Trois lecteurs, trois parcours
 
 | Vous voulez… | Allez à |
 | --- | --- |
-| **offrir des articles** — fabriquer des liens et les diffuser dans vos messages, vos newsletters, vos campagnes | **Partie I**, ci-dessous |
+| **un lien, tout de suite, sans terminal** — coller une adresse dans une page et recevoir un lien | **[l'interface web](interface/README.md)** |
+| **offrir des articles depuis votre service** — appeler l’API depuis une chaîne n8n, une newsletter, un outil interne | **Partie I**, ci-dessous |
 | **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
-La Partie I se lit en dix minutes et ne demande aucun accès technique : un jeton, une requête, un lien à
-diffuser. La Partie II suppose les accès au projet Supabase et à la page de lecture.
+L’interface web ne demande rien d’autre qu’un mot de passe : le jeton de service y vit côté serveur et
+personne ne le manipule. La Partie I se lit en dix minutes et suppose qu’on sache ranger un jeton et
+composer une requête HTTP. La Partie II suppose les accès au projet Supabase et à la page de lecture.
 
 Le code est là pour qui veut regarder : le SQL dans `gift-links/supabase/`, la fonction d’API dans
-`gift-links/functions/`, et les tests à la racine. Ils tournent sans réseau ni secret — `npm ci && npm
+`gift-links/functions/`, l’interface web dans `public/`, `api/` et `interface/`, et les tests à la racine. Ils tournent sans réseau ni secret — `npm ci && npm
 test` suffit à les voir passer.
 
 # Partie I — Utiliser l’outil
@@ -289,20 +291,29 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma et 198 vérifications du traitement des articles.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 138 de l’interface web.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
 ## Architecture et périmètre
 
 ```text
-Canal serveur (WhatsApp, email, outil interne…)
-  → POST /functions/v1/create-gift-links, secret serveur
-  → Arc XP : chargement du contenu
-  → Supabase dédié : cache articles + liens + ouvertures
-  → URL /a/<token>
-  → page Lovable : RPC get_gift_article avec clé publique
+Interface web (Vercel)              Canal serveur (WhatsApp, newsletter, outil interne…)
+  une personne, un mot de passe       une machine, un jeton de service
+  /api/creer garde le jeton            l'appelant garde son jeton
+                      ↘                 ↙
+         POST /functions/v1/create-gift-links  — en-tête x-gift-service-token
+                            ↓
+         Arc XP : chargement du contenu
+                            ↓
+         Supabase dédié : cache articles + liens + ouvertures
+                            ↓
+         URL /a/<token> → page Lovable : RPC get_gift_article, clé publique
 ```
+
+Les deux chemins passent par **la même porte** et sont soumis aux mêmes règles. L'interface web n'est
+qu'un appelant de plus, avec son propre jeton `interface-web` : ce qu'elle crée est attribué comme le
+reste, et se révoque comme le reste.
 
 Il existe une seule page dynamique de lecture, pas une page à générer par article. La création d’un lien ne nécessite pas de publication Lovable.
 
@@ -316,6 +327,9 @@ Il existe une seule page dynamique de lecture, pas une page à générer par art
 | `gift-links/functions/create-gift-links/index.ts` | Point d’entrée HTTP |
 | `build-gift-links-function.mjs` | Assemblage de la fonction déployable |
 | `validate-gift-links-*.mjs` | Tests locaux |
+| `public/`, `api/`, `interface/` | L'interface web : page, fonctions serveur, serveur local de démonstration |
+| `validate-interface.mjs` | Tests de l'interface — dont « sans session, le service n'est pas appelé » |
+| `interface/README.md` | Déploiement Vercel, variables, révocation |
 | `docs/frontend.md` | Contrat à respecter par la page Lovable |
 
 ## État connu au 8 octobre 2026

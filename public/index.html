@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Offrir un article — L'Express</title>
+<link rel="stylesheet" href="/interface.css">
+</head>
+<body>
+
+<header>
+  <p class="surtitre">L'Express — service interne</p>
+  <h1>Offrir un article</h1>
+  <p class="chapeau">Collez l'adresse d'un article de lexpress.fr. Vous recevez en retour un lien qui
+  ouvre l'article en entier, sans abonnement, pendant la durée que vous choisissez.</p>
+</header>
+
+<main>
+
+  <!-- ÉCRAN 1 — la porte. -->
+  <section id="ecran-mot-de-passe" hidden>
+    <h2>Mot de passe</h2>
+    <p>Cette page fabrique des accès à des articles payants : elle est réservée à l'équipe.</p>
+    <form id="form-mot-de-passe">
+      <label for="mot-de-passe">Mot de passe de l'équipe</label>
+      <input type="password" id="mot-de-passe" name="mot-de-passe" autocomplete="current-password" required>
+      <button type="submit" class="principal">Entrer</button>
+    </form>
+    <p id="erreur-mot-de-passe" class="erreur" role="alert" hidden></p>
+  </section>
+
+  <!-- ÉCRAN 2 — la demande. -->
+  <section id="ecran-demande" hidden>
+
+    <details class="aide">
+      <summary>Comment ça marche, en quatre points</summary>
+      <ul>
+        <li><strong>Une adresse par ligne.</strong> Dix articles au maximum à la fois.</li>
+        <li><strong>Un article n'a qu'un seul lien.</strong> Si vous redemandez un article déjà offert,
+        vous recevez le même lien, avec sa date de fin repoussée si vous demandez plus long. C'est
+        normal, et c'est voulu : le lien que quelqu'un a déjà reçu continue de marcher.</li>
+        <li><strong>On ne raccourcit jamais une durée.</strong> Demander 7 jours sur un lien valable
+        encore 20 ne le ramène pas à 7 : quelqu'un l'a peut-être reçu avec la promesse des 20.</li>
+        <li><strong>Lisez les avertissements en rouge.</strong> Un lien peut être créé et ne pas ouvrir
+        l'article. La page le dit ; sans elle, personne ne s'en apercevrait.</li>
+      </ul>
+    </details>
+
+    <form id="form-demande">
+      <label for="adresses">Adresses des articles, une par ligne</label>
+      <textarea id="adresses" name="adresses" rows="6" spellcheck="false"
+        placeholder="https://www.lexpress.fr/politique/…"></textarea>
+
+      <label for="jours">Le lien reste valable pendant</label>
+      <div class="ligne">
+        <input type="number" id="jours" name="jours" value="15" min="1" max="365" inputmode="numeric">
+        <span>jours</span>
+      </div>
+      <p class="precision">15 jours par défaut. Entre 1 et 365.</p>
+
+      <button type="submit" class="principal" id="bouton-creer">Créer les liens</button>
+    </form>
+
+    <p id="attente" class="attente" role="status" hidden>
+      Création en cours… Les articles sont chargés un par un : comptez une vingtaine de secondes.
+    </p>
+    <p id="erreur-demande" class="erreur" role="alert" hidden></p>
+
+    <div id="resultats" aria-live="polite"></div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Les liens créés ici sont des accès réels à des articles payants. Une adresse de lien se transfère :
+  ne la diffusez que là où vous l'avez décidé.</p>
+  <p><button type="button" id="bouton-sortie" class="discret">Fermer la session</button></p>
+</footer>
+
+<script src="/interface.js" type="module"></script>
+</body>
+</html>

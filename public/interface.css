@@ -1,0 +1,96 @@
+/* Interface « offrir un article ». Pas de framework : une feuille lisible, qui tient dans un écran.
+   La contrainte n'est pas l'élégance, c'est qu'un avertissement rouge se voie du premier coup d'œil. */
+
+:root {
+  --rouge: #c8102e;
+  --rouge-pale: #fdecef;
+  --orange: #8a4b00;
+  --orange-pale: #fff6e8;
+  --vert: #1d6b3f;
+  --encre: #14161a;
+  --gris: #5d646e;
+  --trait: #d8dbe0;
+  --fond: #f7f8fa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  max-width: 44rem;
+  font: 1rem/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--encre);
+  background: #fff;
+}
+
+.surtitre { margin: 0; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--rouge); font-weight: 700; }
+h1 { margin: .25rem 0 .5rem; font-size: 2rem; line-height: 1.2; }
+h2 { font-size: 1.15rem; margin: 0 0 .5rem; }
+.chapeau { margin: 0 0 2rem; color: var(--gris); font-size: 1.05rem; }
+
+label { display: block; font-weight: 600; margin: 1.25rem 0 .4rem; }
+input, textarea {
+  width: 100%; padding: .7rem .8rem; font: inherit; color: inherit;
+  border: 1px solid var(--trait); border-radius: 6px; background: #fff;
+}
+input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 3px solid #0b63ce; outline-offset: 2px;
+}
+textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; }
+.ligne { display: flex; align-items: center; gap: .6rem; }
+.ligne input { width: 6rem; }
+.precision { margin: .4rem 0 0; font-size: .85rem; color: var(--gris); }
+
+button { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid transparent; }
+button.principal {
+  margin-top: 1.5rem; padding: .8rem 1.4rem; font-weight: 700; font-size: 1.05rem;
+  background: var(--rouge); color: #fff;
+}
+button.principal:hover { background: #a60d26; }
+button.principal:disabled { background: var(--gris); cursor: progress; }
+button.copier { padding: .45rem .8rem; background: var(--fond); border-color: var(--trait); font-size: .9rem; font-weight: 600; }
+button.copier:hover { background: #eceef2; }
+button.discret { background: none; border: none; color: var(--gris); text-decoration: underline; padding: 0; }
+
+.aide { margin-bottom: 1.5rem; background: var(--fond); border: 1px solid var(--trait); border-radius: 8px; padding: .8rem 1rem; }
+.aide summary { cursor: pointer; font-weight: 600; }
+.aide ul { margin: .8rem 0 .2rem; padding-left: 1.2rem; }
+.aide li { margin-bottom: .5rem; }
+
+.erreur {
+  margin-top: 1.25rem; padding: .9rem 1rem; border-radius: 8px;
+  background: var(--rouge-pale); border: 1px solid var(--rouge); color: #7c0a1d; font-weight: 600;
+}
+.attente { margin-top: 1.25rem; color: var(--gris); font-style: italic; }
+
+/* ── Les résultats. */
+.resume { margin: 2rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid var(--encre); font-weight: 700; }
+.lien {
+  border: 1px solid var(--trait); border-left: 4px solid var(--vert);
+  border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: 1rem;
+}
+.lien.apercu { border-left-color: var(--rouge); background: var(--rouge-pale); }
+.lien h3 { margin: 0 0 .2rem; font-size: 1.05rem; line-height: 1.35; }
+.rubrique { margin: 0 0 .7rem; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--gris); }
+.adresse-lien {
+  display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+  margin: .7rem 0; padding: .6rem .7rem; background: var(--fond);
+  border: 1px solid var(--trait); border-radius: 6px;
+}
+.adresse-lien code { font-size: .85rem; word-break: break-all; flex: 1 1 14rem; }
+.meta { margin: .5rem 0 0; font-size: .9rem; color: var(--gris); }
+.meta strong { color: var(--encre); }
+.etat { display: inline-block; margin-top: .6rem; padding: .15rem .5rem; border-radius: 4px; background: var(--fond); border: 1px solid var(--trait); font-size: .8rem; font-weight: 700; }
+.avertissement { margin: .7rem 0 0; padding: .8rem .9rem; background: #fff; border: 2px solid var(--rouge); border-radius: 6px; color: #7c0a1d; font-weight: 600; }
+
+.refus { border: 1px solid var(--trait); border-left: 4px solid var(--orange); border-radius: 8px; padding: .9rem 1.1rem; margin-bottom: .8rem; background: var(--orange-pale); }
+.refus h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.refus p { margin: .3rem 0; }
+.refus details { margin-top: .5rem; font-size: .85rem; color: var(--gris); }
+.refus code { word-break: break-all; }
+
+.copie-faite { color: var(--vert); font-weight: 700; font-size: .9rem; }
+
+footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--trait); font-size: .85rem; color: var(--gris); }
+footer p { margin: .4rem 0; }
