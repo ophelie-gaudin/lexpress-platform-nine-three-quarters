@@ -13,7 +13,30 @@ const ecranDemande = $('ecran-demande');
 const resultats = $('resultats');
 
 const montrer = (element, visible) => { element.hidden = !visible; };
-const pied = document.querySelector('footer');
+
+/**
+ * ── LES LIBELLÉS VIENNENT DU SERVEUR, PAS DE CE FICHIER.
+ *
+ * `index.html` est servi à qui demande l'adresse, clé ou pas. Tout ce qu'on y écrirait serait public —
+ * les cacher derrière un `hidden` n'aurait rien caché, il suffit de lire le source. Le serveur ne les
+ * rend donc qu'une fois la barrière franchie, et la page les pose en `textContent`.
+ */
+function poserGuide(guide) {
+  if (!guide) return;
+  $('titre').textContent = guide.titre;
+  $('chapeau').textContent = guide.chapeau;
+  montrer($('chapeau'), true);
+  $('adresses').placeholder = guide.exemple ?? '';
+  $('attente').textContent = guide.attente ?? '';
+  $('pied').textContent = guide.pied ?? '';
+  montrer($('pied'), true);
+  const points = $('aide-points');
+  points.replaceChildren();
+  for (const c of guide.conseils ?? []) points.appendChild(texte('li', c));
+  montrer($('aide'), (guide.conseils ?? []).length > 0);
+}
+
+const poserInvite = (invite) => { if (invite) $('invite-jeton').textContent = invite; };
 
 function texte(balise, contenu, classe) {
   const n = document.createElement(balise);
@@ -33,7 +56,7 @@ async function etat() {
   try {
     const r = await fetch('/api/session', { headers: { accept: 'application/json' } });
     const d = await r.json();
-    return { acces: d?.acces === true, ouverte: d?.ouverte === true };
+    return { acces: d?.acces === true, ouverte: d?.ouverte === true, invite: d?.invite, guide: d?.guide };
   } catch { return { acces: false, ouverte: false }; }
 }
 
@@ -46,7 +69,13 @@ function afficherEtape(etape, message) {
   montrer(ecranJeton, etape === 'jeton');
   montrer(ecranDemande, etape === 'demande');
   // « Fermer la session » n'a aucun sens tant qu'aucune session n'est ouverte.
-  montrer($('bouton-sortie').parentElement, etape === 'demande');
+  montrer($('ligne-sortie'), etape === 'demande');
+  // Hors session, le titre et le pied de page ne disent rien de l'outil.
+  if (etape !== 'demande') {
+    $('titre').textContent = 'Accès réservé';
+    montrer($('chapeau'), false);
+    montrer($('pied'), false);
+  }
   if (etape === 'acces') { afficherErreur($('erreur-acces'), message); $('cle').value = ''; $('cle').focus(); }
   if (etape === 'jeton') {
     afficherErreur($('erreur-jeton'), message);
@@ -68,7 +97,7 @@ $('form-acces').addEventListener('submit', async (e) => {
       body: JSON.stringify({ cle: $('cle').value }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.acces) { $('cle').value = ''; afficherEtape('jeton'); return; }
+    if (r.ok && d.acces) { $('cle').value = ''; poserInvite(d.invite); afficherEtape('jeton'); return; }
     afficherErreur($('erreur-acces'), d.erreur ?? 'Accès impossible.');
   } catch {
     afficherErreur($('erreur-acces'), "La page n'a pas pu joindre le serveur. Réessayez dans un instant.");
@@ -90,7 +119,7 @@ $('form-jeton').addEventListener('submit', async (e) => {
       body: JSON.stringify({ jeton: $('jeton').value.trim() }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.ouverte) { $('jeton').value = ''; afficherEtape('demande'); $('adresses').focus(); return; }
+    if (r.ok && d.ouverte) { $('jeton').value = ''; poserGuide(d.guide); afficherEtape('demande'); $('adresses').focus(); return; }
     if (r.status === 403 && d.etape === 'acces') { afficherEtape('acces', 'La clé d’accès a expiré. Entrez-la de nouveau.'); return; }
     afficherErreur($('erreur-jeton'), d.erreur ?? 'Connexion impossible.');
   } catch {
@@ -259,4 +288,6 @@ $('form-demande').addEventListener('submit', async (e) => {
 // durée — sept jours pour la session, trente pour le rideau, et on peut fermer l'un sans l'autre. Sans
 // cette priorité, la page afficherait le formulaire à quelqu'un dont chaque demande sera refusée.
 const depart = await etat();
+poserInvite(depart.invite);
+poserGuide(depart.guide);
 afficherEtape(!depart.acces ? 'acces' : depart.ouverte ? 'demande' : 'jeton');

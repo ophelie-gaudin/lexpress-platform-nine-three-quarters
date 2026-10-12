@@ -27,10 +27,20 @@ directement, sans passer par cette page. Ce qu'elle apporte réellement : plus d
 anonyme. Elle réduit la surface, elle ne remplace pas le jeton.
 
 **Elle ne cache pas la page, et il ne faut pas le croire.** Le HTML est statique et public : n'importe
-qui peut demander `GET /`, lire le code de l'écran du jeton, et retirer l'attribut `hidden` dans son
-navigateur. Le dépôt lui-même est public. Ce qui est gardé, ce sont les ROUTES — ce que l'écran permet
-de faire, pas le fait de le voir. Relevé par une revue adverse le 12 octobre 2026, parce que ce
-document promettait l'inverse.
+qui peut demander `GET /`. Ce qui est gardé, ce sont les ROUTES — ce que l'écran permet de faire, pas
+le fait de le voir. Relevé par une revue adverse le 12 octobre 2026, parce que ce document promettait
+l'inverse.
+
+**En revanche, cette page ne dit plus ce qu'elle fait.** Un visiteur sans la clé obtient un titre
+(« Accès réservé »), un champ, un bouton. Les libellés qui décrivent le service — le titre réel, le
+chapeau, les conseils, l'avertissement du pied de page — sont **rendus par le serveur** une fois la
+barrière franchie. Les mettre dans le fichier derrière un attribut `hidden` n'aurait rien caché : il
+suffit de lire le source. Un test interdit à `public/` de contenir « offr », « abonnement »,
+« payant », « premium », « gratuit » ou « lexpress.fr ».
+
+**Ce n'est pas de la sécurité, c'est de la discrétion.** Le dépôt est public, ces phrases s'y lisent
+pour qui les cherche. Ce qu'on évite, c'est de présenter à un robot de passage un formulaire qui
+annonce ce qu'il fabrique.
 
 **Ce n'est pas un second facteur.** Deux secrets qu'on connaît ne font pas deux facteurs
 indépendants : quelqu'un qui obtient le jeton d'une personne obtient souvent la clé d'équipe par le

@@ -531,6 +531,40 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(decrireEtat('etat_inconnu').phrase === 'Lien disponible', 'un état inconnu ne casse pas l’affichage');
 }
 
+// ── LES FICHIERS PUBLICS NE DÉCRIVENT PAS L'OUTIL.
+//
+// `public/` est servi à qui demande l'adresse, clé ou pas. Déplacer un texte derrière un attribut
+// `hidden` ne cache rien : il suffit de lire le source. Les libellés qui décrivent le service sont
+// donc rendus par le serveur, une fois la barrière franchie.
+//
+// CE N'EST PAS DE LA SÉCURITÉ — le dépôt est public, ces phrases s'y lisent. C'est de la discrétion :
+// ne pas présenter à un robot de passage un formulaire qui annonce ce qu'il fabrique.
+{
+  // `article` n'est pas dans la liste : c'est un nom de balise HTML, et il ne décrit rien tout seul.
+  const MOTS = /offr|abonnement|payant|premium|gratuit|lexpress\.fr/i;
+  for (const fichier of ['index.html', 'interface.js', 'interface.css']) {
+    const contenu = readFileSync(`./public/${fichier}`, 'utf8');
+    const fautifs = contenu.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => MOTS.test(l));
+    check(fautifs.length === 0,
+      `C’EST LA PROPRIÉTÉ QUI COMPTE : public/${fichier} ne décrit pas le service${fautifs.length ? ` — ligne ${fautifs[0][0]} : ${fautifs[0][1].trim().slice(0, 80)}` : ''}`);
+  }
+  const page = readFileSync('./public/index.html', 'utf8');
+  check(/<title>Accès réservé<\/title>/.test(page), 'et son titre non plus — c’est ce que lit un onglet, un signet, un robot');
+  check(/<meta name="robots" content="noindex, nofollow">/.test(page), 'la page demande aussi à ne pas être indexée');
+
+  // Les textes existent, simplement ils sont rendus par le serveur.
+  const vus = await (await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET', cookie: cookieValide() }))).json();
+  check(vus.guide?.titre && vus.guide.conseils.length === 4 && vus.guide.pied,
+    'une fois la session ouverte, le serveur rend le titre, les conseils et le pied de page');
+  check(/offert/.test(vus.guide.conseils[1]), 'et ces textes-là disent bien ce que fait l’outil, à qui est entré');
+  const ferme = await (await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET', rideau: false }))).json();
+  check(ferme.guide === undefined && ferme.invite === undefined,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : sans barrière franchie, le serveur ne rend AUCUN de ces libellés');
+  const apresCle = await (await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET' }))).json();
+  check(apresCle.invite && apresCle.guide === undefined,
+    'après la clé seule, il rend l’invite du jeton et rien de plus');
+}
+
 // ── LE NAVIGATEUR NE DOIT RIEN SAVOIR, ET RIEN INTERPRÉTER.
 {
   const page = readFileSync('./public/index.html', 'utf8');
@@ -549,6 +583,8 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(!/localStorage|sessionStorage|document\.cookie/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le script ne range le jeton nulle part — ni en mémoire du navigateur, ni dans un cookie qu’il pourrait relire. Il le poste une fois, le serveur le scelle, et la page ne le revoit jamais');
   check(/value = ''/.test(codeSeul), 'et il vide le champ de saisie : un jeton ne reste pas affiché dans une page ouverte');
+  check(/textContent = 'Accès réservé'/.test(codeSeul),
+    'et hors session la page reprend son titre muet : fermer la session ne doit pas laisser le libellé en place');
   check(/!depart\.acces \? 'acces'/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : au chargement, le rideau passe AVANT la session — les deux cookies n’ont pas la même durée de vie, et sans cette priorité la page montrerait le formulaire à quelqu’un dont chaque demande sera refusée');
   check(/ferme\('\/api\/session'\)/.test(codeSeul) && /ferme\('\/api\/acces'\)/.test(codeSeul),

@@ -4,27 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Offrir un article — L'Express</title>
+<title>Accès réservé</title>
 <link rel="stylesheet" href="/interface.css">
 </head>
 <body>
 
+<!-- CE FICHIER EST PUBLIC, ET IL NE DIT RIEN.
+     Qui demande cette adresse sans la clé obtient une page qui ne nomme ni ce que fait l'outil, ni ce
+     qu'il y a derrière. Les libellés qui le décrivent sont rendus par le serveur APRÈS la clé : les
+     déplacer derrière un `hidden` n'aurait rien caché du tout, puisque le source se lit. -->
+
 <header>
-  <p class="surtitre">L'Express — service interne</p>
-  <h1>Offrir un article</h1>
-  <p class="chapeau">Collez l'adresse d'un article de lexpress.fr. Vous recevez en retour un lien qui
-  ouvre l'article en entier, sans abonnement, pendant la durée que vous choisissez.</p>
+  <h1 id="titre">Accès réservé</h1>
+  <p class="chapeau" id="chapeau" hidden></p>
 </header>
 
 <main>
 
-  <!-- ÉCRAN 0 — le rideau. Une clé partagée, qui n'ouvre que la page. -->
+  <!-- ÉCRAN 0 — la clé partagée. -->
   <section id="ecran-acces" hidden>
-    <h2>Clé d'accès</h2>
-    <p>Cette page est réservée à l'équipe. La clé ci-dessous ouvre la page ; elle ne permet pas de
-    créer de liens — il faudra ensuite votre jeton personnel.</p>
     <form id="form-acces">
-      <label for="cle">Clé d'accès de l'équipe</label>
+      <label for="cle">Clé d'accès</label>
       <input type="password" id="cle" name="cle" autocomplete="off" required>
       <button type="submit" class="principal">Continuer</button>
     </form>
@@ -32,12 +32,9 @@
     <p id="erreur-acces" class="erreur" role="alert" hidden></p>
   </section>
 
-  <!-- ÉCRAN 1 — la porte. Chacun son jeton : ce que vous créez porte votre nom. -->
+  <!-- ÉCRAN 1 — le jeton personnel. -->
   <section id="ecran-jeton" hidden>
-    <h2>Votre jeton</h2>
-    <p>Deuxième et dernière étape. Cette page fabrique des accès à des articles payants.
-    <strong>Chaque personne a son propre jeton</strong> : les liens que vous créez sont enregistrés à
-    votre nom, et votre accès se coupe sans couper celui des autres.</p>
+    <p id="invite-jeton"></p>
     <form id="form-jeton">
       <label for="jeton">Jeton personnel — 64 caractères</label>
       <input type="password" id="jeton" name="jeton" autocomplete="off" autocapitalize="off"
@@ -46,31 +43,21 @@
       s'il est perdu, il ne se retrouve pas, il s'en demande un nouveau.</p>
       <button type="submit" class="principal">Entrer</button>
     </form>
-    <p id="attente-jeton" class="attente" role="status" hidden>Vérification du jeton auprès du service…</p>
+    <p id="attente-jeton" class="attente" role="status" hidden>Vérification…</p>
     <p id="erreur-jeton" class="erreur" role="alert" hidden></p>
   </section>
 
   <!-- ÉCRAN 2 — la demande. -->
   <section id="ecran-demande" hidden>
 
-    <details class="aide">
-      <summary>Comment ça marche, en quatre points</summary>
-      <ul>
-        <li><strong>Une adresse par ligne.</strong> Dix articles au maximum à la fois.</li>
-        <li><strong>Un article n'a qu'un seul lien.</strong> Si vous redemandez un article déjà offert,
-        vous recevez le même lien, avec sa date de fin repoussée si vous demandez plus long. C'est
-        normal, et c'est voulu : le lien que quelqu'un a déjà reçu continue de marcher.</li>
-        <li><strong>On ne raccourcit jamais une durée.</strong> Demander 7 jours sur un lien valable
-        encore 20 ne le ramène pas à 7 : quelqu'un l'a peut-être reçu avec la promesse des 20.</li>
-        <li><strong>Lisez les avertissements en rouge.</strong> Un lien peut être créé et ne pas ouvrir
-        l'article. La page le dit ; sans elle, personne ne s'en apercevrait.</li>
-      </ul>
+    <details class="aide" id="aide" hidden>
+      <summary>Comment ça marche</summary>
+      <ul id="aide-points"></ul>
     </details>
 
     <form id="form-demande">
-      <label for="adresses">Adresses des articles, une par ligne</label>
-      <textarea id="adresses" name="adresses" rows="6" spellcheck="false"
-        placeholder="https://www.lexpress.fr/politique/…"></textarea>
+      <label for="adresses">Adresses, une par ligne</label>
+      <textarea id="adresses" name="adresses" rows="6" spellcheck="false"></textarea>
 
       <label for="jours">Le lien reste valable pendant</label>
       <div class="ligne">
@@ -82,9 +69,7 @@
       <button type="submit" class="principal" id="bouton-creer">Créer les liens</button>
     </form>
 
-    <p id="attente" class="attente" role="status" hidden>
-      Création en cours… Les articles sont chargés un par un : comptez une vingtaine de secondes.
-    </p>
+    <p id="attente" class="attente" role="status" hidden></p>
     <p id="erreur-demande" class="erreur" role="alert" hidden></p>
 
     <div id="resultats" aria-live="polite"></div>
@@ -93,10 +78,8 @@
 </main>
 
 <footer>
-  <p>Les liens créés ici sont des accès réels à des articles payants, enregistrés à votre nom. Une
-  adresse de lien se transfère : ne la diffusez que là où vous l'avez décidé.</p>
-  <p>Votre jeton reste ouvert sept jours sur ce navigateur. Sur un poste partagé, fermez la session.</p>
-  <p><button type="button" id="bouton-sortie" class="discret">Fermer la session</button></p>
+  <p id="pied" hidden></p>
+  <p id="ligne-sortie" hidden><button type="button" id="bouton-sortie" class="discret">Fermer la session</button></p>
 </footer>
 
 <script src="/interface.js" type="module"></script>

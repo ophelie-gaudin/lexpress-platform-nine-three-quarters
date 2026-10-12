@@ -1,5 +1,6 @@
-/* Interface « offrir un article ». Pas de framework : une feuille lisible, qui tient dans un écran.
-   La contrainte n'est pas l'élégance, c'est qu'un avertissement rouge se voie du premier coup d'œil. */
+/* Interface interne. Pas de framework : une feuille lisible, qui tient dans un écran.
+   La contrainte n'est pas l'élégance, c'est qu'un avertissement rouge se voie du premier coup d'œil.
+   Ce fichier est public : il ne décrit pas davantage ce qu'il habille. */
 
 :root {
   --rouge: #c8102e;

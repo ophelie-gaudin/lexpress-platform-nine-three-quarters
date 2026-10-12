@@ -9,7 +9,7 @@
 import { trierUrls } from '../gift-links/functions/_shared/arc-id.mjs';
 import { dureeDemandee } from '../gift-links/functions/_shared/corps.mjs';
 import { expliquer, expliquerPanne } from './motifs.mjs';
-import { AVERTISSEMENT_APERCU, decrireEtat, formaterEcheance, rubriqueDepuisAdresse, titreDepuisAdresse } from './presentation.mjs';
+import { AVERTISSEMENT_APERCU, GUIDE, INVITE_JETON, decrireEtat, formaterEcheance, rubriqueDepuisAdresse, titreDepuisAdresse } from './presentation.mjs';
 import {
   DUREE_SESSION_S, FORME_JETON, enteteDeconnexion, enteteSession, lireCookie,
   origineAcceptable, ouvrirJeton, scellerJeton,
@@ -109,7 +109,7 @@ export function handlerAcces({ env, maintenant = () => Date.now() }) {
       journal('warn', 'cle_acces_refusee', {});
       return json({ erreur: 'Clé d’accès incorrecte.' }, 401);
     }
-    return json({ acces: true }, 200, {
+    return json({ acces: true, invite: INVITE_JETON }, 200, {
       'set-cookie': enteteAcces(signerAcces(secret, attendue, maintenant() + DUREE_ACCES_S * 1000)),
     });
   };
@@ -164,9 +164,14 @@ export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () 
 
     if (request.method === 'GET') {
       // La page a besoin des DEUX états pour savoir quel écran montrer.
+      // Les libellés accompagnent l'état : la page les reçoit au rechargement comme à l'ouverture,
+      // et seulement pour les barrières déjà franchies.
+      const acces = rideauOuvert(env, request, maintenant());
+      const ouverte = ouvrirJeton(secret, cookie, maintenant()) !== null;
       return json({
-        acces: rideauOuvert(env, request, maintenant()),
-        ouverte: ouvrirJeton(secret, cookie, maintenant()) !== null,
+        acces, ouverte,
+        ...(acces ? { invite: INVITE_JETON } : {}),
+        ...(ouverte ? { guide: GUIDE } : {}),
       });
     }
     if (request.method === 'DELETE') {
@@ -208,7 +213,7 @@ export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () 
     }
 
     const scelle = scellerJeton(secret, jeton, maintenant() + DUREE_SESSION_S * 1000);
-    return json({ ouverte: true, jours: DUREE_SESSION_S / 86400 }, 200, { 'set-cookie': enteteSession(scelle) });
+    return json({ ouverte: true, jours: DUREE_SESSION_S / 86400, guide: GUIDE }, 200, { 'set-cookie': enteteSession(scelle) });
   };
 }
 
