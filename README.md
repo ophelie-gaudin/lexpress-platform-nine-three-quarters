@@ -17,8 +17,8 @@ le peuvent tout autant.
 | **offrir des articles depuis votre service** — appeler l’API depuis une chaîne n8n, une newsletter, un outil interne | **Partie I**, ci-dessous |
 | **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
-L’interface web ne demande rien d’autre qu’un mot de passe : le jeton de service y vit côté serveur et
-personne ne le manipule. La Partie I se lit en dix minutes et suppose qu’on sache ranger un jeton et
+L’interface web demande votre jeton une fois, le scelle dans un cookie chiffré et n’y revient pas de
+la semaine : vous ne composez aucune requête, et les liens restent enregistrés à votre nom. La Partie I se lit en dix minutes et suppose qu’on sache ranger un jeton et
 composer une requête HTTP. La Partie II suppose les accès au projet Supabase et à la page de lecture.
 
 Le code est là pour qui veut regarder : le SQL dans `gift-links/supabase/`, la fonction d’API dans
@@ -291,7 +291,7 @@ npm test
 npm run build
 ```
 
-Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 138 de l’interface web.
+Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 159 de l’interface web.
 
 Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
@@ -299,8 +299,8 @@ Le test API importe le générateur, qui régénère aussi le bundle local. `npm
 
 ```text
 Interface web (Vercel)              Canal serveur (WhatsApp, newsletter, outil interne…)
-  une personne, un mot de passe       une machine, un jeton de service
-  /api/creer garde le jeton            l'appelant garde son jeton
+  une personne, SON jeton             une machine, SON jeton
+  scellé dans un cookie chiffré        rangé dans son gestionnaire de secrets
                       ↘                 ↙
          POST /functions/v1/create-gift-links  — en-tête x-gift-service-token
                             ↓
@@ -311,9 +311,9 @@ Interface web (Vercel)              Canal serveur (WhatsApp, newsletter, outil i
          URL /a/<token> → page Lovable : RPC get_gift_article, clé publique
 ```
 
-Les deux chemins passent par **la même porte** et sont soumis aux mêmes règles. L'interface web n'est
-qu'un appelant de plus, avec son propre jeton `interface-web` : ce qu'elle crée est attribué comme le
-reste, et se révoque comme le reste.
+Les deux chemins passent par **la même porte** et sont soumis aux mêmes règles. L'interface n'est pas
+un appelant de plus : elle est un **passe-plat**. Elle ne détient aucun jeton, chaque personne apporte
+le sien, et `gift_links_by_client` nomme donc la personne — pas l'outil qu'elle a employé.
 
 Il existe une seule page dynamique de lecture, pas une page à générer par article. La création d’un lien ne nécessite pas de publication Lovable.
 

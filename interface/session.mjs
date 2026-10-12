@@ -1,73 +1,72 @@
-// La porte de l'interface : un mot de passe partagé, puis un cookie signé.
+// La porte de l'interface : CHACUN ENTRE SON PROPRE JETON.
 //
-// POURQUOI UNE PORTE DU TOUT. Derrière cette page, un bouton fabrique des accès complets à des articles
-// payants. Une URL Vercel est publique et devinable ; sans mot de passe, n'importe qui tombant sur
-// l'adresse pourrait ouvrir le catalogue premium de L'Express à qui il veut. C'est la porte la plus
-// sensible du service — le même raisonnement que le jeton par appelant côté API.
+// POURQUOI PAS UN MOT DE PASSE PARTAGÉ. La première version en posait un, et le jeton de service vivait
+// dans Vercel, le même pour tout le monde. Ça marchait, et ça perdait exactement ce que le service s'est
+// donné la peine de construire : un appelant = un jeton = une ligne dans `api_clients`. Avec un jeton
+// commun, `gift_links_by_client` nomme « interface-web » pour tout le monde, on ne peut couper personne
+// en particulier, et un départ oblige à changer le secret de toute l'équipe.
 //
-// LE JETON DE SERVICE NE DESCEND JAMAIS DANS LE NAVIGATEUR. C'est la raison d'être de ces fonctions
-// serveur : la page parle à `/api/creer`, et `/api/creer` seul connaît le jeton. Mettre le jeton dans
-// la page reviendrait à le publier — le code d'une page est lisible par celui qui l'affiche.
+// CE QUE ÇA CHANGE AUSSI : VERCEL NE DÉTIENT PLUS AUCUN JETON DE SERVICE. Le projet déployé ne porte
+// qu'une clé de chiffrement. Quelqu'un qui obtiendrait les variables d'environnement n'obtiendrait pas
+// de quoi fabriquer un seul lien.
 //
-// CE QUE CETTE PORTE NE PRÉTEND PAS ÊTRE. Un mot de passe partagé ne nomme personne : les liens créés
-// ici seront tous attribués au même client API. Pour savoir QUI a créé un lien, il faudrait une
-// identification par personne (Vercel + fournisseur d'identité). Pour une petite équipe qui se partage
-// un service interne, le mot de passe suffit ; ce n'est pas vrai à vingt personnes, et ce fichier ne
-// prétendra pas le contraire.
-import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
-
-/** Douze heures : une journée de travail, pas une session éternelle sur un poste partagé. */
-export const DUREE_SESSION_S = 12 * 3600;
-
-const b64url = (buf) => Buffer.from(buf).toString('base64url');
-
-const empreinte = (valeur) => createHash('sha256').update(String(valeur), 'utf8').digest();
+// LE JETON NE DESCEND JAMAIS DANS LE NAVIGATEUR APRÈS AVOIR ÉTÉ SAISI. Il est scellé dans un cookie
+// CHIFFRÉ — pas seulement signé. Un cookie signé serait lisible : le jeton s'y promènerait en clair
+// dans chaque requête et dans les journaux du moindre mandataire. `HttpOnly` met de surcroît le cookie
+// hors de portée d'un script de la page, donc hors de portée d'une faille XSS.
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 /**
- * COMPARAISON À TEMPS CONSTANT, SUR DES EMPREINTES.
- *
- * `===` sur deux chaînes s'arrête au premier caractère différent : le temps de réponse renseigne sur le
- * préfixe trouvé. On compare donc des empreintes SHA-256 — toujours 32 octets, donc `timingSafeEqual`
- * ne lève pas sur des longueurs différentes, ce qui serait une fuite de plus.
- *
- * UN MOT DE PASSE ABSENT N'OUVRE PAS LA PORTE. Si la variable n'est pas configurée, tout refuser : le
- * repli le plus naturel — « pas de mot de passe configuré, donc pas de contrôle » — publierait
- * l'interface au premier déploiement mal réglé.
+ * Sept jours. Un jeton de 64 caractères ne se retape pas de mémoire : une session de douze heures
+ * ferait recopier le jeton tous les matins, donc le laisser traîner dans un fichier ouvert. Sept jours,
+ * et un bouton « Fermer la session » pour le poste partagé ou l'ordinateur prêté.
  */
-export function motDePasseValide(fourni, attendu) {
-  if (typeof attendu !== 'string' || attendu.length < 12) return false;
-  if (typeof fourni !== 'string' || fourni === '') return false;
-  return timingSafeEqual(empreinte(fourni), empreinte(attendu));
-}
+export const DUREE_SESSION_S = 7 * 24 * 3600;
 
-/** Le cookie porte sa date de fin et sa signature, rien d'autre. Aucun nom, aucun secret. */
-export function signerSession(secret, expireLe) {
-  const charge = b64url(JSON.stringify({ exp: expireLe }));
-  const signature = createHmac('sha256', secret).update(charge).digest('base64url');
-  return `${charge}.${signature}`;
+/**
+ * La clé de chiffrement, dérivée du secret de déploiement.
+ *
+ * PAS D'ÉTIREMENT DE CLÉ, ET C'EST ASSUMÉ : `INTERFACE_SECRET_SESSION` n'est pas un mot de passe humain
+ * mais 32 octets tirés au hasard (`openssl rand -hex 32`). Un scrypt ne protégerait de rien ici — il
+ * sert à ralentir la recherche exhaustive d'un secret devinable, et celui-ci ne l'est pas.
+ */
+const cle = (secret) => createHash('sha256').update(`scellement-jeton:${secret}`).digest();
+
+/** iv.chiffre.sceau — AES-256-GCM : le sceau rend toute retouche du cookie détectable. */
+export function scellerJeton(secret, jeton, expireLe) {
+  const iv = randomBytes(12);
+  const chiffreur = createCipheriv('aes-256-gcm', cle(secret), iv);
+  const chiffre = Buffer.concat([
+    chiffreur.update(JSON.stringify({ jeton, exp: expireLe }), 'utf8'),
+    chiffreur.final(),
+  ]);
+  return [iv, chiffre, chiffreur.getAuthTag()].map((b) => b.toString('base64url')).join('.');
 }
 
 /**
- * Vérifie la signature PUIS la date. Rend `true` ou `false`, jamais une exception : un cookie bricolé
- * est un refus ordinaire, pas une panne du serveur.
+ * Rend le jeton, ou `null`. Jamais d'exception : un cookie bricolé, périmé ou chiffré avec une autre
+ * clé est un refus ordinaire, pas une panne du serveur.
  */
-export function sessionValide(secret, valeur, maintenant = Date.now()) {
-  if (typeof secret !== 'string' || secret.length < 32) return false;
-  if (typeof valeur !== 'string' || !valeur.includes('.')) return false;
-  const [charge, signature] = valeur.split('.', 2);
-  const attendue = createHmac('sha256', secret).update(charge).digest('base64url');
-  // Même raison qu'au-dessus : on compare des empreintes de longueur fixe.
-  if (!timingSafeEqual(empreinte(signature), empreinte(attendue))) return false;
+export function ouvrirJeton(secret, valeur, maintenant = Date.now()) {
+  if (typeof secret !== 'string' || secret.length < 32) return null;
+  if (typeof valeur !== 'string') return null;
+  const morceaux = valeur.split('.');
+  if (morceaux.length !== 3) return null;
   try {
-    const { exp } = JSON.parse(Buffer.from(charge, 'base64url').toString('utf8'));
-    return typeof exp === 'number' && exp > maintenant;
-  } catch { return false; }
+    const [iv, chiffre, sceau] = morceaux.map((m) => Buffer.from(m, 'base64url'));
+    const dechiffreur = createDecipheriv('aes-256-gcm', cle(secret), iv);
+    dechiffreur.setAuthTag(sceau);
+    const clair = Buffer.concat([dechiffreur.update(chiffre), dechiffreur.final()]).toString('utf8');
+    const { jeton, exp } = JSON.parse(clair);
+    if (typeof jeton !== 'string' || jeton === '') return null;
+    if (typeof exp !== 'number' || exp <= maintenant) return null;
+    return jeton;
+  } catch { return null; }
 }
 
 /** `HttpOnly` : le script de la page ne peut pas lire le cookie, donc une faille XSS ne l'emporte pas. */
 export function enteteSession(valeur, dureeS = DUREE_SESSION_S) {
-  const attributs = ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Strict', `Max-Age=${dureeS}`];
-  return `session=${valeur}; ${attributs.join('; ')}`;
+  return `session=${valeur}; ${['Path=/', 'HttpOnly', 'Secure', 'SameSite=Strict', `Max-Age=${dureeS}`].join('; ')}`;
 }
 
 export const enteteDeconnexion = () =>
@@ -81,6 +80,15 @@ export function lireCookie(entete, nom = 'session') {
   }
   return null;
 }
+
+/**
+ * La forme d'un jeton de service : 64 caractères hexadécimaux (`openssl rand -hex 32`).
+ *
+ * VÉRIFIER LA FORME N'EST PAS VÉRIFIER LE JETON. Ça évite d'envoyer au service une ligne collée de
+ * travers — un espace, un retour à la ligne, la moitié de la valeur. La seule vérification qui prouve
+ * quelque chose est l'appel au service, et c'est lui qui tranche.
+ */
+export const FORME_JETON = /^[0-9a-f]{64}$/;
 
 /**
  * DEUXIÈME BARRIÈRE CONTRE LA REQUÊTE VENUE D'AILLEURS. `SameSite=Strict` suffit sur un navigateur à

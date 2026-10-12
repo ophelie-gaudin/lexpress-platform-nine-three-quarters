@@ -11,8 +11,8 @@ import { dureeDemandee } from '../gift-links/functions/_shared/corps.mjs';
 import { expliquer, expliquerPanne } from './motifs.mjs';
 import { AVERTISSEMENT_APERCU, decrireEtat, formaterEcheance, rubriqueDepuisAdresse, titreDepuisAdresse } from './presentation.mjs';
 import {
-  DUREE_SESSION_S, enteteDeconnexion, enteteSession, lireCookie,
-  motDePasseValide, origineAcceptable, sessionValide, signerSession,
+  DUREE_SESSION_S, FORME_JETON, enteteDeconnexion, enteteSession, lireCookie,
+  origineAcceptable, ouvrirJeton, scellerJeton,
 } from './session.mjs';
 
 export const API_PAR_DEFAUT = 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/create-gift-links';
@@ -50,14 +50,50 @@ export function decouperAdresses(brut) {
 }
 
 // ── /api/session — ouvrir, vérifier, fermer.
-export function handlerSession({ env, maintenant = () => Date.now() }) {
+//
+// CHACUN ENTRE SON PROPRE JETON. L'interface n'en détient aucun : elle scelle celui qu'on lui donne
+// dans un cookie chiffré, et le ressort à chaque demande. Ce qu'elle crée est donc attribué à la
+// personne, se révoque pour elle seule, et un départ ne coupe personne d'autre.
+
+/**
+ * LA SEULE VÉRIFICATION QUI PROUVE QUELQUE CHOSE : DEMANDER AU SERVICE.
+ *
+ * On lui envoie une demande VIDE — `{"urls": []}`. Le service authentifie d'abord : un jeton refusé
+ * rend `401` avant d'avoir rien lu. Un jeton reconnu passe l'authentification puis bute sur « aucune
+ * URL exploitable », un `400`. Donc : 401 = refusé, autre chose = reconnu.
+ *
+ * CETTE SONDE N'ÉCRIT RIEN ET N'APPELLE PAS ARC. Aucun article n'est chargé, aucun lien créé, aucune
+ * ligne posée. Elle laisse deux traces, et il faut les connaître : le compteur `appels` du client
+ * avance d'une unité, et le journal de la fonction Edge reçoit une ligne `aucune_url_exploitable` à
+ * chaque ouverture de session. C'est le prix d'une vérification honnête — l'alternative serait
+ * d'accepter n'importe quoi et de ne le découvrir qu'au premier vrai lot.
+ *
+ * UN SERVICE INJOIGNABLE N'EST PAS UN JETON REFUSÉ. Confondre les deux enverrait quelqu'un chercher
+ * une faute dans un jeton parfaitement valide pendant que la base est en panne.
+ */
+export async function sonderJeton({ fetch, url, jeton, delaiMs = 10_000 }) {
+  let reponse;
+  try {
+    reponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-gift-service-token': jeton },
+      body: JSON.stringify({ urls: [] }),
+      signal: AbortSignal.timeout(delaiMs),
+    });
+  } catch { return { indisponible: true }; }
+  if (reponse.status === 401) return { reconnu: false };
+  if (reponse.status === 503) return { indisponible: true };
+  return { reconnu: true };
+}
+
+export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () => Date.now() }) {
   return async (request) => {
     const url = new URL(request.url);
     const secret = env.INTERFACE_SECRET_SESSION ?? '';
     const cookie = lireCookie(request.headers.get('cookie'));
 
     if (request.method === 'GET') {
-      return json({ ouverte: sessionValide(secret, cookie, maintenant()) });
+      return json({ ouverte: ouvrirJeton(secret, cookie, maintenant()) !== null });
     }
     if (request.method === 'DELETE') {
       return json({ ouverte: false }, 200, { 'set-cookie': enteteDeconnexion() });
@@ -68,24 +104,35 @@ export function handlerSession({ env, maintenant = () => Date.now() }) {
       return json({ erreur: 'origine refusée' }, 403);
     }
 
-    // CONFIGURATION INCOMPLÈTE = PORTE FERMÉE, et le dire. Le repli « pas de mot de passe configuré,
-    // donc pas de contrôle » publierait l'interface au premier déploiement mal réglé.
-    if (secret.length < 32 || (env.INTERFACE_MOT_DE_PASSE ?? '').length < 12) {
-      journal('error', 'configuration_incomplete', {
-        secret_session: secret.length >= 32, mot_de_passe: (env.INTERFACE_MOT_DE_PASSE ?? '').length >= 12,
-      });
+    // CONFIGURATION INCOMPLÈTE = PORTE FERMÉE, et le dire. Sans clé de scellement, le repli naturel
+    // serait de poser le jeton en clair dans le cookie : exactement ce qu'on refuse.
+    if (secret.length < 32) {
+      journal('error', 'configuration_incomplete', { secret_session: false });
       return json({ erreur: "Cette interface n'est pas configurée : prévenez la personne qui l'administre." }, 503);
     }
 
     let corps;
     try { corps = await request.json(); } catch { corps = null; }
-    const fourni = corps && typeof corps === 'object' ? corps.motDePasse : null;
-    if (!motDePasseValide(fourni, env.INTERFACE_MOT_DE_PASSE)) {
-      journal('warn', 'mot_de_passe_refuse', {});
-      return json({ erreur: 'Mot de passe incorrect.' }, 401);
+    const jeton = corps && typeof corps === 'object' && typeof corps.jeton === 'string' ? corps.jeton.trim() : '';
+    if (!FORME_JETON.test(jeton)) {
+      // Refus de FORME, sans appeler le service : une valeur collée de travers n'a pas à consommer un
+      // appel. Le message dit ce qui est attendu, parce que « jeton invalide » n'aide personne.
+      journal('warn', 'jeton_mal_forme', { longueur: jeton.length });
+      return json({ erreur: 'Ce n’est pas un jeton : il en faut un de 64 caractères, chiffres et lettres de a à f. Recopiez-le en entier, sans espace.' }, 400);
     }
-    const valeur = signerSession(secret, maintenant() + DUREE_SESSION_S * 1000);
-    return json({ ouverte: true }, 200, { 'set-cookie': enteteSession(valeur) });
+
+    const sonde = await sonderJeton({ fetch, url: env.GIFT_API_URL || API_PAR_DEFAUT, jeton });
+    if (sonde.indisponible) {
+      journal('error', 'verification_indisponible', {});
+      return json({ erreur: expliquerPanne(503) }, 503);
+    }
+    if (!sonde.reconnu) {
+      journal('warn', 'jeton_refuse', {});
+      return json({ erreur: "Ce jeton n’est pas reconnu, ou il a été révoqué. Demandez-en un nouveau à la personne qui administre le service." }, 401);
+    }
+
+    const scelle = scellerJeton(secret, jeton, maintenant() + DUREE_SESSION_S * 1000);
+    return json({ ouverte: true, jours: DUREE_SESSION_S / 86400 }, 200, { 'set-cookie': enteteSession(scelle) });
   };
 }
 
@@ -98,16 +145,14 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
       journal('warn', 'origine_refusee', { chemin: url.pathname });
       return json({ erreur: 'origine refusée' }, 403);
     }
-    // 403 ET NON 401 : l'interface distingue « votre session est finie, remettez le mot de passe » de
-    // « le service a refusé NOTRE accès », qui n'appelle pas du tout le même geste.
-    if (!sessionValide(env.INTERFACE_SECRET_SESSION ?? '', lireCookie(request.headers.get('cookie')), maintenant())) {
-      return json({ erreur: expliquerPanne(403) }, 403);
-    }
-    const jeton = env.GIFT_SERVICE_TOKEN ?? '';
-    if (jeton === '') {
-      journal('error', 'jeton_de_service_absent', {});
-      return json({ erreur: "Cette interface n'est pas configurée pour appeler le service : prévenez la personne qui l'administre." }, 503);
-    }
+    // LE JETON VIENT DU COOKIE DE LA PERSONNE, PAS DE L'ENVIRONNEMENT. Le déploiement n'en détient
+    // aucun : ce qui est créé ici est attribué à celui ou celle qui a ouvert la session, et se révoque
+    // pour lui seul.
+    //
+    // 403 ET NON 401 : l'interface distingue « votre session est finie, remettez votre jeton » de
+    // « le service a refusé ce jeton », qui n'appelle pas du tout le même geste.
+    const jeton = ouvrirJeton(env.INTERFACE_SECRET_SESSION ?? '', lireCookie(request.headers.get('cookie')), maintenant());
+    if (jeton === null) return json({ erreur: expliquerPanne(403) }, 403);
 
     let corps;
     try { corps = await request.json(); } catch { corps = null; }
@@ -161,6 +206,13 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
         panne: expliquerPanne(expire ? 504 : 503), liens: [], refuses: refusesLocaux,
         resume: { demandes: adresses.length, obtenus: 0, apercus: 0, refuses: refusesLocaux.length },
       }, expire ? 504 : 503);
+    }
+
+    // LE JETON A ÉTÉ RÉVOQUÉ PENDANT LA SESSION. La session ne vaut plus rien : on efface le cookie
+    // plutôt que de laisser la personne recliquer sur un bouton qui ne peut plus rien produire.
+    if (reponse.status === 401) {
+      journal('warn', 'jeton_revoque_en_session', {});
+      return json({ erreur: expliquerPanne(401) }, 403, { 'set-cookie': enteteDeconnexion() });
     }
 
     const refusesService = (charge?.rejected ?? []).map((r) => ({

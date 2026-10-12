@@ -1,35 +1,53 @@
 // L'interface web : ce qu'elle refuse, et ce qu'elle ne laisse jamais filtrer.
 //
-// Deux propriétés valent le test avant toute question d'ergonomie.
+// Trois propriétés valent le test avant toute question d'ergonomie.
 //
 // LA PREMIÈRE : SANS SESSION, LE SERVICE N'EST PAS APPELÉ. Pas « l'appel échoue » — PAS APPELÉ. Derrière
 // cette page, un bouton fabrique des accès complets à des articles payants ; une URL Vercel est publique.
 // Le test compte les appels sortants et exige zéro.
 //
-// LA SECONDE : LE JETON DE SERVICE NE DESCEND JAMAIS DANS LE NAVIGATEUR, ni dans une réponse, ni dans un
-// journal. C'est la raison d'être des fonctions serveur : la page parle à `/api/creer`, et `/api/creer`
-// seul connaît le jeton.
+// LA DEUXIÈME : LE JETON NE REDESCEND JAMAIS DANS LE NAVIGATEUR une fois saisi, ni dans une réponse, ni
+// dans un journal, ni en clair dans le cookie. Il est scellé par chiffrement : un cookie seulement
+// signé promènerait le jeton en clair à chaque requête et dans les journaux du moindre mandataire.
+//
+// LA TROISIÈME : C'EST LE JETON DE LA PERSONNE QUI PART AU SERVICE, jamais un jeton du déploiement. Le
+// test pose un jeton leurre dans l'environnement et vérifie qu'il n'est pas employé — c'est ce qui
+// garantit que `gift_links_by_client` nomme la personne, et qu'on peut la couper seule.
 //
 // Les handlers sont écrits en `fetch(Request) → Response` justement pour que ce fichier puisse les
 // EXÉCUTER sous Node, sans la plateforme. Des contrôles qu'aucun test n'exécute ne prouvent rien : on a
 // déjà découvert qu'on pouvait désactiver une authentification sans qu'une seule assertion bronche.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { handlerCreer, handlerSession, decouperAdresses, MAX_ADRESSES, API_PAR_DEFAUT } from './interface/handlers.mjs';
-import { enteteSession, motDePasseValide, sessionValide, signerSession, lireCookie, origineAcceptable } from './interface/session.mjs';
+import { handlerCreer, handlerSession, sonderJeton, decouperAdresses, MAX_ADRESSES, API_PAR_DEFAUT } from './interface/handlers.mjs';
+import { FORME_JETON, ouvrirJeton, scellerJeton, lireCookie, origineAcceptable } from './interface/session.mjs';
 import { expliquer, expliquerPanne, TRADUCTIONS } from './interface/motifs.mjs';
 import { titreDepuisAdresse, rubriqueDepuisAdresse, decrireEtat, formaterEcheance } from './interface/presentation.mjs';
 import { CLES_ACCEPTEES } from './gift-links/functions/_shared/corps.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 
-const JETON = 'jeton-de-service-de-test-jamais-reel';
+// Le jeton d'une personne : 64 hexadécimaux, la forme que rend `openssl rand -hex 32`.
+const JETON = 'f3'.repeat(32);
+const JETON_AUTRE = 'ab'.repeat(32);
 const SECRET = 'x'.repeat(48);
-const ENV = { INTERFACE_SECRET_SESSION: SECRET, INTERFACE_MOT_DE_PASSE: 'motdepasse-equipe-2026', GIFT_SERVICE_TOKEN: JETON };
+// LE LEURRE. Un jeton posé dans l'environnement du déploiement : il ne doit JAMAIS partir au service.
+// S'il partait, tous les liens seraient attribués au déploiement et non à la personne.
+const JETON_LEURRE = '99'.repeat(32);
+const ENV = { INTERFACE_SECRET_SESSION: SECRET, GIFT_SERVICE_TOKEN: JETON_LEURRE };
 const URL_OK = 'https://www.lexpress.fr/societe/religion/a-lyon-lecole-des-chartreux-XGLQ6NY6CJD6LLBLBBMEF7A2V4';
 const URL_OK2 = 'https://www.lexpress.fr/politique/elections/en-2027-faut-il-mentir-RQOLMEM5NZE3BNTWPJEEGC5B5Y';
 
-const cookieValide = (decalageMs = 3600_000) => `session=${signerSession(SECRET, Date.now() + decalageMs)}`;
+const cookieValide = (decalageMs = 3600_000, jeton = JETON) => `session=${scellerJeton(SECRET, jeton, Date.now() + decalageMs)}`;
+
+/** Le service feint pour la SONDE d'ouverture de session : 401 refuse, 400 reconnaît. */
+const sondeur = (statut) => {
+  const appels = [];
+  return { appels, fetch: async (url, options) => {
+    appels.push({ url, entetes: options.headers, corps: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ error: 'aucune URL exploitable' }), { status: statut });
+  } };
+};
 
 const requete = (chemin, { methode = 'POST', corps, cookie, origine } = {}) => new Request(`https://liens.lexpress.fr${chemin}`, {
   method: methode,
@@ -71,59 +89,100 @@ const LIEN_APERCU = { ...LIEN_COMPLET, url: URL_OK2, arc_id: 'RQOLMEM5NZE3BNTWPJ
 // qu'un article a été retiré. L'interface ne peut pas le deviner, et ne doit pas essayer.
 const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWDWDWDWDWDWDWDWDWDWDWDWD';
 
-// ── LA PORTE. Un mot de passe partagé, un cookie signé.
+// ── LA PORTE. Chacun son jeton, scellé dans un cookie chiffré.
 {
-  const ouvrir = handlerSession({ env: ENV });
+  // La forme d'abord : une valeur collée de travers n'a pas à consommer un appel au service.
+  const sonde = sondeur(400);
+  const ouvrir = handlerSession({ env: ENV, fetch: sonde.fetch });
+  for (const [cas, valeur] of [
+    ['vide', ''], ['trop court', 'f3'.repeat(20)], ['majuscules', 'F3'.repeat(32)],
+    ['avec un espace', `${'f3'.repeat(31)}f 3`], ['pas hexadécimal', 'z3'.repeat(32)], ['absent', undefined],
+  ]) {
+    const { resultat } = await avecJournal(() => ouvrir(requete('/api/session', { corps: { jeton: valeur } })));
+    check(resultat.status === 400, `un jeton ${cas} est refusé sur sa forme`);
+  }
+  check(sonde.appels.length === 0,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : aucune de ces valeurs n’a été envoyée au service — un refus de forme ne consomme pas d’appel');
+  check(FORME_JETON.test(JETON) && !FORME_JETON.test(`${JETON} `), 'la forme attendue est 64 hexadécimaux exactement');
 
-  const sansCookie = await (await ouvrir(requete('/api/session', { methode: 'GET' }))).json();
-  check(sansCookie.ouverte === false, 'sans cookie, la session est fermée');
+  // LA SONDE : une demande VIDE. Le service authentifie d'abord, donc 401 = refusé, 400 = reconnu.
+  const refuseur = sondeur(401);
+  const refus = (await avecJournal(() => handlerSession({ env: ENV, fetch: refuseur.fetch })(
+    requete('/api/session', { corps: { jeton: JETON } })))).resultat;
+  check(refus.status === 401, 'un jeton que le service refuse reçoit 401');
+  check(!refus.headers.get('set-cookie'), 'et aucune session n’est ouverte');
+  check(/révoqué/.test((await refus.json()).erreur), 'le message envisage la révocation, qui est le cas le plus courant');
+  check(refuseur.appels[0].corps.urls.length === 0 && Object.keys(refuseur.appels[0].corps).length === 1,
+    'LA SONDE N’ÉCRIT RIEN : une demande vide, aucune autre clé — pas d’article chargé, pas de lien créé');
+  check(refuseur.appels[0].entetes['x-gift-service-token'] === JETON, 'et c’est bien le jeton saisi qui est éprouvé');
 
-  const refus = (await avecJournal(() => ouvrir(requete('/api/session', { corps: { motDePasse: 'motdepasse-equipe-2025' } })))).resultat;
-  check(refus.status === 401, 'un mot de passe faux reçoit 401');
-  check(!refus.headers.get('set-cookie'), 'et aucun cookie n’est posé');
-
-  const ok = await ouvrir(requete('/api/session', { corps: { motDePasse: ENV.INTERFACE_MOT_DE_PASSE } }));
+  const ok = await handlerSession({ env: ENV, fetch: sondeur(400).fetch })(requete('/api/session', { corps: { jeton: JETON } }));
   const biscuit = ok.headers.get('set-cookie');
-  check(ok.status === 200 && (await ok.json()).ouverte === true, 'le bon mot de passe ouvre la session');
+  check(ok.status === 200 && (await ok.json()).ouverte === true, 'un jeton reconnu ouvre la session');
   for (const attribut of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/'])
     check(biscuit.includes(attribut), `le cookie porte ${attribut} — HttpOnly le met hors de portée d’un script de la page`);
-  check(!biscuit.includes(ENV.INTERFACE_MOT_DE_PASSE), 'C’EST LA PROPRIÉTÉ QUI COMPTE : le mot de passe n’est pas recopié dans le cookie');
 
   const valeur = biscuit.slice('session='.length).split(';')[0];
-  check(sessionValide(SECRET, valeur), 'le cookie rendu est accepté à la requête suivante');
-  check(!sessionValide(SECRET, valeur.slice(0, -2) + 'zz'), 'une signature modifiée est refusée');
-  check(!sessionValide(SECRET, signerSession('un-autre-secret-de-quarante-huit-caracteres-xx', Date.now() + 1000)),
-    'un cookie signé avec un autre secret est refusé');
-  check(!sessionValide(SECRET, signerSession(SECRET, Date.now() - 1000)), 'un cookie périmé est refusé');
-  check(!sessionValide(SECRET, 'nimportequoi') && !sessionValide(SECRET, null) && !sessionValide(SECRET, 'a.b'),
+  check(!biscuit.includes(JETON) && !Buffer.from(valeur.split('.')[1], 'base64url').toString('utf8').includes(JETON),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le jeton n’est PAS en clair dans le cookie — un cookie seulement signé le promènerait à chaque requête et dans les journaux du moindre mandataire');
+  check(ouvrirJeton(SECRET, valeur) === JETON, 'et le serveur, lui, le retrouve intact');
+
+  check(ouvrirJeton(SECRET, scellerJeton(SECRET, JETON, Date.now() - 1000)) === null, 'un cookie périmé ne rend rien');
+  check(ouvrirJeton('y'.repeat(48), valeur) === null, 'un cookie scellé avec une autre clé ne rend rien');
+  check(ouvrirJeton('trop-court', valeur) === null, 'une clé trop courte ne descelle rien — la configuration bâclée ferme la porte, elle ne l’ouvre pas');
+  const [iv, chiffre, sceau] = valeur.split('.');
+  check(ouvrirJeton(SECRET, `${iv}.${chiffre.slice(0, -2)}AA.${sceau}`) === null,
+    'un chiffre retouché est rejeté par le sceau AES-GCM, pas déchiffré en n’importe quoi');
+  check(ouvrirJeton(SECRET, `${iv}.${chiffre}`) === null && ouvrirJeton(SECRET, 'nimportequoi') === null && ouvrirJeton(SECRET, null) === null,
     'un cookie bricolé est un refus ordinaire, jamais une exception');
-  check(!sessionValide('trop-court', valeur), 'un secret trop court ne valide rien — la configuration bâclée ferme la porte, elle ne l’ouvre pas');
 
-  const sortie = await ouvrir(requete('/api/session', { methode: 'DELETE' }));
+  const vivante = await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET', cookie: cookieValide() }));
+  check((await vivante.json()).ouverte === true, 'la page sait que la session est ouverte sans jamais revoir le jeton');
+  check((await (await handlerSession({ env: ENV })(requete('/api/session', { methode: 'GET' }))).json()).ouverte === false,
+    'et qu’elle est fermée quand il n’y a pas de cookie');
+
+  const sortie = await handlerSession({ env: ENV })(requete('/api/session', { methode: 'DELETE' }));
   check(/Max-Age=0/.test(sortie.headers.get('set-cookie')), 'fermer la session efface le cookie');
+  check((await handlerSession({ env: ENV })(requete('/api/session', { methode: 'PUT' }))).status === 405, 'une autre méthode est refusée');
 
-  check((await ouvrir(requete('/api/session', { methode: 'PUT' }))).status === 405, 'une autre méthode est refusée');
-  const ailleurs = (await avecJournal(() => ouvrir(requete('/api/session', { corps: { motDePasse: ENV.INTERFACE_MOT_DE_PASSE }, origine: 'https://evil.example' })))).resultat;
+  const ailleurs = (await avecJournal(() => handlerSession({ env: ENV, fetch: sonde.fetch })(
+    requete('/api/session', { corps: { jeton: JETON }, origine: 'https://evil.example' })))).resultat;
   check(ailleurs.status === 403, 'une requête venue d’une autre origine est refusée');
-  check((await ouvrir(requete('/api/session', { corps: { motDePasse: ENV.INTERFACE_MOT_DE_PASSE }, origine: 'https://liens.lexpress.fr' }))).status === 200,
-    'et la même origine passe');
 }
 
-// ── LA CONFIGURATION INCOMPLÈTE FERME LA PORTE. Le repli naturel — « pas de mot de passe configuré,
-//    donc pas de contrôle » — publierait l'interface au premier déploiement mal réglé.
+// ── UN SERVICE INJOIGNABLE N'EST PAS UN JETON REFUSÉ.
+//
+// Confondre les deux enverrait quelqu'un chercher une faute dans un jeton parfaitement valide pendant
+// que la base est en panne.
 {
-  for (const [cas, env] of [
-    ['aucune variable', {}],
-    ['secret de session trop court', { INTERFACE_SECRET_SESSION: 'court', INTERFACE_MOT_DE_PASSE: 'motdepasse-equipe-2026' }],
-    ['mot de passe trop court', { INTERFACE_SECRET_SESSION: SECRET, INTERFACE_MOT_DE_PASSE: 'court' }],
+  for (const [cas, reseau] of [
+    ['réseau coupé', async () => { throw new TypeError('fetch failed'); }],
+    ['délai dépassé', async () => { const e = new Error('expiré'); e.name = 'TimeoutError'; throw e; }],
+    ['service en 503', async () => new Response('{}', { status: 503 })],
   ]) {
-    const { resultat } = await avecJournal(() => handlerSession({ env })(requete('/api/session', { corps: { motDePasse: 'court' } })));
+    const { resultat } = await avecJournal(() => handlerSession({ env: ENV, fetch: reseau })(
+      requete('/api/session', { corps: { jeton: JETON } })));
+    check(resultat.status === 503, `C’EST LA PROPRIÉTÉ QUI COMPTE : ${cas} → 503, surtout pas 401`);
+    check(/momentanément indisponible/.test((await resultat.json()).erreur), `${cas} dit « revenez », pas « votre jeton est faux »`);
+    check(!resultat.headers.get('set-cookie'), `${cas} n’ouvre aucune session`);
+  }
+  check((await sonderJeton({ fetch: async () => new Response('{}', { status: 400 }), url: 'https://x', jeton: JETON })).reconnu === true,
+    'un 400 — « aucune URL exploitable » — prouve que l’authentification est passée : le jeton est reconnu');
+  check((await sonderJeton({ fetch: async () => new Response('{}', { status: 401 }), url: 'https://x', jeton: JETON })).reconnu === false,
+    'et seul un 401 prouve le contraire');
+}
+
+// ── LA CONFIGURATION INCOMPLÈTE FERME LA PORTE. Sans clé de scellement, le repli naturel serait de
+//    poser le jeton en clair dans le cookie : exactement ce qu'on refuse.
+{
+  for (const [cas, env] of [['aucune variable', {}], ['clé trop courte', { INTERFACE_SECRET_SESSION: 'court' }]]) {
+    const sonde = sondeur(400);
+    const { resultat } = await avecJournal(() => handlerSession({ env, fetch: sonde.fetch })(
+      requete('/api/session', { corps: { jeton: JETON } })));
     check(resultat.status === 503, `C’EST LA PROPRIÉTÉ QUI COMPTE : ${cas} → 503, pas une porte ouverte`);
     check(!resultat.headers.get('set-cookie'), `${cas} ne pose aucun cookie`);
+    check(sonde.appels.length === 0, `${cas} n’appelle même pas le service`);
   }
-  check(motDePasseValide('', '') === false, 'un mot de passe vide ne correspond jamais à une configuration vide');
-  check(motDePasseValide('court', 'court') === false, 'un mot de passe de moins de douze caractères est refusé côté configuration');
-  check(motDePasseValide('motdepasse-equipe-2026', 'motdepasse-equipe-2026'), 'et un mot de passe correct passe');
 }
 
 // ── SANS SESSION, LE SERVICE N'EST PAS APPELÉ. La propriété centrale.
@@ -164,6 +223,8 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(service.appels.length === 1, 'un seul appel sortant pour un lot');
   check(service.appels[0].url === API_PAR_DEFAUT, 'l’appel part vers la fonction de création');
   check(service.appels[0].entetes['x-gift-service-token'] === JETON, 'le jeton voyage dans l’en-tête prévu, côté serveur seulement');
+  check(service.appels[0].entetes['x-gift-service-token'] !== JETON_LEURRE && !brut.includes(JETON_LEURRE),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le jeton posé dans l’environnement du déploiement N’EST PAS employé — c’est celui de la personne qui part, donc `gift_links_by_client` la nomme et on peut la couper seule');
   const envoye = service.appels[0].corps;
   check(Object.keys(envoye).every((c) => CLES_ACCEPTEES.includes(c)),
     'le corps envoyé n’emploie QUE les clés acceptées par le service — une clé inconnue est un refus, pas un haussement d’épaules');
@@ -186,6 +247,19 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(/décision éditoriale/.test(d.refuses[1].explication), 'et le refus venu du service est traduit lui aussi');
   check(d.refuses[0].motif === 'ancien format sans identifiant Arc : /a_12.html',
     'LE MOTIF BRUT RESTE JOINT : une traduction qui avale l’original rend le diagnostic impossible le jour où le service renvoie un motif inconnu d’ici');
+}
+
+// ── DEUX PERSONNES, DEUX JETONS. L'attribution ne vaut que si elle distingue.
+{
+  const vus = [];
+  for (const jeton of [JETON, JETON_AUTRE]) {
+    const service = serviceFeint({ corps: { links: [LIEN_COMPLET], rejected: [] } });
+    await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
+      requete('/api/creer', { corps: { adresses: URL_OK }, cookie: cookieValide(3600_000, jeton) })));
+    vus.push(service.appels[0].entetes['x-gift-service-token']);
+  }
+  check(vus[0] === JETON && vus[1] === JETON_AUTRE && vus[0] !== vus[1],
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : deux sessions ouvertes avec deux jetons appellent le service avec deux jetons — sinon tous les liens porteraient le même nom');
 }
 
 // ── L'APERÇU : UN 200 QUI EST POURTANT UN ÉCHEC.
@@ -211,7 +285,7 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
 // La page de lecture a affiché « cet article n'est plus disponible » pendant des jours pour une simple
 // coupure réseau : un échec technique déguisé en décision éditoriale, et un diagnostic impossible.
 {
-  for (const [statut, forme] of [[503, /momentanément indisponible/], [500, /Rien n'a été diffusé/], [502, /n'a pu être chargé/], [401, /administre/]]) {
+  for (const [statut, forme] of [[503, /momentanément indisponible/], [500, /Rien n'a été diffusé/], [502, /n'a pu être chargé/]]) {
     const service = serviceFeint({ statut, corps: { error: 'motif technique du service' } });
     const { resultat } = await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
       requete('/api/creer', { corps: { adresses: URL_OK }, cookie: cookieValide() })));
@@ -221,8 +295,18 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
     check(d.liens.length === 0, `aucun lien n’est inventé sur un ${statut}`);
     check(d.detail === 'motif technique du service', `le motif du service reste joint pour le diagnostic (${statut})`);
   }
-  check(/administre/.test(expliquerPanne(401)) && /n'est pas votre adresse/.test(expliquerPanne(401)),
-    'C’EST LA PROPRIÉTÉ QUI COMPTE : un 401 dit explicitement que l’adresse de l’utilisateur n’est pas en cause, et vers qui se tourner — sinon la personne cherche l’erreur dans sa propre demande');
+  // LE JETON RÉVOQUÉ PENDANT LA SESSION. Le cookie ne vaut plus rien : le garder laisserait la
+  // personne recliquer sur un bouton qui ne peut plus rien produire.
+  {
+    const service = serviceFeint({ statut: 401, corps: { error: 'non autorisé' } });
+    const { resultat } = await avecJournal(() => handlerCreer({ env: ENV, fetch: service.fetch })(
+      requete('/api/creer', { corps: { adresses: URL_OK }, cookie: cookieValide() })));
+    const d = await resultat.json();
+    check(resultat.status === 403, 'C’EST LA PROPRIÉTÉ QUI COMPTE : un jeton révoqué en cours de session renvoie à l’écran du jeton, il ne fait pas croire à une panne');
+    check(/Max-Age=0/.test(resultat.headers.get('set-cookie') ?? ''), 'et la session est effacée sur-le-champ');
+    check(/révoqué/.test(d.erreur) && /n'est pas votre adresse/.test(d.erreur),
+      'le message nomme la cause et dit que l’adresse demandée n’y est pour rien — sinon la personne cherche la faute dans sa propre demande');
+  }
 
   const injoignable = { fetch: async () => { throw new TypeError('fetch failed'); } };
   const r = await avecJournal(() => handlerCreer({ env: ENV, fetch: injoignable.fetch })(
@@ -326,11 +410,14 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
 
   for (const [ou, contenu] of [['la page', page], ['le script', script], ['la feuille de style', style]]) {
     check(!/GIFT_SERVICE_TOKEN|x-gift-service-token/.test(contenu), `C’EST LA PROPRIÉTÉ QUI COMPTE : ${ou} ne nomme même pas le jeton de service`);
-    check(!/supabase\.co|INTERFACE_MOT_DE_PASSE|INTERFACE_SECRET_SESSION/.test(contenu), `${ou} ne connaît ni la base ni les secrets`);
+    check(!/supabase\.co|INTERFACE_SECRET_SESSION/.test(contenu), `${ou} ne connaît ni la base ni la clé de scellement`);
   }
   // On regarde le CODE, pas les commentaires : ce fichier-ci explique justement pourquoi `innerHTML`
   // est proscrit, et un test qui ne sait pas distinguer les deux interdirait de l’écrire.
   const codeSeul = script.split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+  check(!/localStorage|sessionStorage|document\.cookie/.test(codeSeul),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : le script ne range le jeton nulle part — ni en mémoire du navigateur, ni dans un cookie qu’il pourrait relire. Il le poste une fois, le serveur le scelle, et la page ne le revoit jamais');
+  check(/value = ''/.test(codeSeul), 'et il vide le champ de saisie : un jeton ne reste pas affiché dans une page ouverte');
   check(!/innerHTML|insertAdjacentHTML|document\.write/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le script n’insère aucun HTML — les libellés affichés viennent de ce que la personne a collé, et `textContent` ne les interprète pas');
   check(/textContent/.test(codeSeul), 'il remplit `textContent`, ce qui échappe tout seul');

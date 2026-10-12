@@ -18,16 +18,22 @@
 
 <main>
 
-  <!-- ÉCRAN 1 — la porte. -->
-  <section id="ecran-mot-de-passe" hidden>
-    <h2>Mot de passe</h2>
-    <p>Cette page fabrique des accès à des articles payants : elle est réservée à l'équipe.</p>
-    <form id="form-mot-de-passe">
-      <label for="mot-de-passe">Mot de passe de l'équipe</label>
-      <input type="password" id="mot-de-passe" name="mot-de-passe" autocomplete="current-password" required>
+  <!-- ÉCRAN 1 — la porte. Chacun son jeton : ce que vous créez porte votre nom. -->
+  <section id="ecran-jeton" hidden>
+    <h2>Votre jeton</h2>
+    <p>Cette page fabrique des accès à des articles payants. <strong>Chaque personne a son propre
+    jeton</strong> : les liens que vous créez sont enregistrés à votre nom, et votre accès se coupe
+    sans couper celui des autres.</p>
+    <form id="form-jeton">
+      <label for="jeton">Jeton personnel — 64 caractères</label>
+      <input type="password" id="jeton" name="jeton" autocomplete="off" autocapitalize="off"
+        autocorrect="off" spellcheck="false" required>
+      <p class="precision">Collez-le en entier, sans espace. Il vous a été remis une seule fois :
+      s'il est perdu, il ne se retrouve pas, il s'en demande un nouveau.</p>
       <button type="submit" class="principal">Entrer</button>
     </form>
-    <p id="erreur-mot-de-passe" class="erreur" role="alert" hidden></p>
+    <p id="attente-jeton" class="attente" role="status" hidden>Vérification du jeton auprès du service…</p>
+    <p id="erreur-jeton" class="erreur" role="alert" hidden></p>
   </section>
 
   <!-- ÉCRAN 2 — la demande. -->
@@ -73,8 +79,9 @@
 </main>
 
 <footer>
-  <p>Les liens créés ici sont des accès réels à des articles payants. Une adresse de lien se transfère :
-  ne la diffusez que là où vous l'avez décidé.</p>
+  <p>Les liens créés ici sont des accès réels à des articles payants, enregistrés à votre nom. Une
+  adresse de lien se transfère : ne la diffusez que là où vous l'avez décidé.</p>
+  <p>Votre jeton reste ouvert sept jours sur ce navigateur. Sur un poste partagé, fermez la session.</p>
   <p><button type="button" id="bouton-sortie" class="discret">Fermer la session</button></p>
 </footer>
 

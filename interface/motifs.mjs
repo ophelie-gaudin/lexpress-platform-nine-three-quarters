@@ -53,8 +53,10 @@ export function expliquer(motif) {
 // joindre la base — un mensonge au lecteur, et un diagnostic rendu impossible. Même règle ici : un 503
 // dit « revenez », pas « votre article est refusé ».
 export const PANNES = {
-  401: "Le service a refusé l'accès de cette interface. Ce n'est pas votre adresse qui est en cause : prévenez la personne qui administre le service.",
-  403: "Session expirée. Entrez de nouveau le mot de passe.",
+  // Ce n'est pas l'adresse demandée qui est en cause, c'est le jeton : le dire, sinon la personne
+  // cherche la faute dans sa propre demande.
+  401: "Votre jeton n'est plus accepté : il a sans doute été révoqué. Ce n'est pas votre adresse qui est en cause. Demandez un nouveau jeton à la personne qui administre le service.",
+  403: "Session expirée. Entrez de nouveau votre jeton.",
   500: "Le service n'a pas pu enregistrer les liens. Rien n'a été diffusé. Réessayez ; si cela persiste, signalez-le.",
   502: "Aucun des articles demandés n'a pu être chargé. Le détail est donné article par article ci-dessous.",
   503: "Le service est momentanément indisponible. Ce n'est pas votre demande qui est en cause : réessayez dans un instant.",

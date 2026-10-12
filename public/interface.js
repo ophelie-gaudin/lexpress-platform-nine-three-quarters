@@ -7,7 +7,7 @@
 // des nœuds et on remplit `textContent`.
 
 const $ = (id) => document.getElementById(id);
-const ecranMotDePasse = $('ecran-mot-de-passe');
+const ecranJeton = $('ecran-jeton');
 const ecranDemande = $('ecran-demande');
 const resultats = $('resultats');
 
@@ -37,33 +37,39 @@ async function etatSession() {
 }
 
 function basculerVers(ouverte, message) {
-  montrer(ecranMotDePasse, !ouverte);
+  montrer(ecranJeton, !ouverte);
   montrer(ecranDemande, ouverte);
   // « Fermer la session » n'a aucun sens tant qu'aucune session n'est ouverte.
   montrer($('bouton-sortie').parentElement, ouverte);
   if (!ouverte) {
-    afficherErreur($('erreur-mot-de-passe'), message);
-    $('mot-de-passe').value = '';
-    $('mot-de-passe').focus();
+    afficherErreur($('erreur-jeton'), message);
+    // Le champ est vidé dans tous les cas : un jeton ne doit pas rester affiché dans une page ouverte.
+    $('jeton').value = '';
+    $('jeton').focus();
   }
 }
 
-$('form-mot-de-passe').addEventListener('submit', async (e) => {
+$('form-jeton').addEventListener('submit', async (e) => {
   e.preventDefault();
-  afficherErreur($('erreur-mot-de-passe'), null);
+  afficherErreur($('erreur-jeton'), null);
+  // La vérification demande au service si le jeton est reconnu : ça prend une seconde ou deux, et
+  // sans ce mot la personne reclique en croyant que rien ne s'est passé.
+  montrer($('attente-jeton'), true);
   try {
     const r = await fetch('/api/session', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ motDePasse: $('mot-de-passe').value }),
+      body: JSON.stringify({ jeton: $('jeton').value.trim() }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.ouverte) { basculerVers(true); $('adresses').focus(); return; }
-    afficherErreur($('erreur-mot-de-passe'), d.erreur ?? 'Connexion impossible.');
+    if (r.ok && d.ouverte) { $('jeton').value = ''; basculerVers(true); $('adresses').focus(); return; }
+    afficherErreur($('erreur-jeton'), d.erreur ?? 'Connexion impossible.');
   } catch {
-    // Un échec de réseau n'est pas un mot de passe refusé : le dire autrement éviterait de chercher
-    // pendant dix minutes une faute de frappe dans un mot de passe correct.
-    afficherErreur($('erreur-mot-de-passe'), "La page n'a pas pu joindre le serveur. Réessayez dans un instant.");
+    // Un échec de réseau n'est pas un jeton refusé : le dire autrement enverrait chercher une faute
+    // de frappe dans un jeton parfaitement valide.
+    afficherErreur($('erreur-jeton'), "La page n'a pas pu joindre le serveur. Réessayez dans un instant.");
+  } finally {
+    montrer($('attente-jeton'), false);
   }
 });
 
@@ -184,7 +190,7 @@ $('form-demande').addEventListener('submit', async (e) => {
       body: JSON.stringify({ adresses: $('adresses').value, jours: Number($('jours').value) }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.status === 403) { basculerVers(false, d.erreur ?? 'Session expirée. Entrez de nouveau le mot de passe.'); return; }
+    if (r.status === 403) { basculerVers(false, d.erreur ?? 'Session expirée. Entrez de nouveau votre jeton.'); return; }
     if (d.liens || d.refuses || d.panne) {
       afficherResultats(d);
       // Les résultats s'écrivent sous le formulaire : sur un petit écran, ils sont hors de vue et la
