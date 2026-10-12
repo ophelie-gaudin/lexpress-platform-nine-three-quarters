@@ -15,7 +15,7 @@ import {
   origineAcceptable, ouvrirJeton, scellerJeton,
 } from './session.mjs';
 import {
-  DUREE_ACCES_S, LONGUEUR_MIN_CLE, accesValide, attenteBrouillage, cleValide,
+  DUREE_ACCES_S, LONGUEUR_MIN_CLE, TropDeCalculs, accesValide, attenteBrouillage, cleValide,
   enteteAcces, enteteFinAcces, signerAcces,
 } from './acces.mjs';
 
@@ -61,8 +61,9 @@ export function decouperAdresses(brut) {
 // LA PREMIÈRE GARDE AUSSI L'API, pas seulement l'affichage. Une barrière qui ne vit que dans
 // l'apparence de la page se contourne en appelant `/api/creer` à la main — ce qui en ferait une
 // décoration. `/api/session` et `/api/creer` la vérifient donc toutes les deux, en premier.
-const rideauOuvert = (env, request, maintenant) =>
-  accesValide(env.INTERFACE_SECRET_SESSION ?? '', lireCookie(request.headers.get('cookie'), 'acces'), maintenant);
+const rideauOuvert = (env, request, maintenant) => accesValide(
+  env.INTERFACE_SECRET_SESSION ?? '', env.INTERFACE_CLE_ACCES ?? '',
+  lireCookie(request.headers.get('cookie'), 'acces'), maintenant);
 
 const RIDEAU_FERME = { erreur: "Clé d’accès requise.", etape: 'acces' };
 
@@ -93,12 +94,24 @@ export function handlerAcces({ env, maintenant = () => Date.now() }) {
     try { corps = await request.json(); } catch { corps = null; }
     const fournie = corps && typeof corps === 'object' && typeof corps.cle === 'string' ? corps.cle : '';
 
-    if (!(await cleValide(fournie, attendue, secret))) {
+    let bonne;
+    try {
+      bonne = await cleValide(fournie, attendue, secret);
+    } catch (e) {
+      // Le plafond de calculs simultanés est atteint : on refuse TOUT DE SUITE, sans calculer. Une
+      // file d'attente ne ferait que différer la saturation.
+      if (!(e instanceof TropDeCalculs)) throw e;
+      journal('warn', 'verification_cle_saturee', {});
+      return json({ erreur: 'Trop de tentatives en cours. Réessayez dans un instant.' }, 429, { 'retry-after': '2' });
+    }
+    if (!bonne) {
       await attenteBrouillage();
       journal('warn', 'cle_acces_refusee', {});
       return json({ erreur: 'Clé d’accès incorrecte.' }, 401);
     }
-    return json({ acces: true }, 200, { 'set-cookie': enteteAcces(signerAcces(secret, maintenant() + DUREE_ACCES_S * 1000)) });
+    return json({ acces: true }, 200, {
+      'set-cookie': enteteAcces(signerAcces(secret, attendue, maintenant() + DUREE_ACCES_S * 1000)),
+    });
   };
 }
 
@@ -134,9 +147,13 @@ export async function sonderJeton({ fetch, url, jeton, delaiMs = 10_000 }) {
       signal: AbortSignal.timeout(delaiMs),
     });
   } catch { return { indisponible: true }; }
+  // SEUL LE 400 PROUVE QUE L'AUTHENTIFICATION EST PASSÉE — c'est « aucune URL exploitable », le refus
+  // qui n'arrive qu'APRÈS la vérification du jeton. Relevé par une revue adverse (12 oct. 2026) : la
+  // première version acceptait tout sauf 401 et 503, donc un 502 de passerelle ouvrait une session qui
+  // ne pouvait rien créer. Mieux vaut dire « revenez » que faire croire à une connexion.
   if (reponse.status === 401) return { reconnu: false };
-  if (reponse.status === 503) return { indisponible: true };
-  return { reconnu: true };
+  if (reponse.status === 400) return { reconnu: true };
+  return { indisponible: true };
 }
 
 export function handlerSession({ env, fetch = globalThis.fetch, maintenant = () => Date.now() }) {

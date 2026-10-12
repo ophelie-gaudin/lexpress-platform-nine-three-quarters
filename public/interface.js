@@ -105,10 +105,21 @@ $('form-jeton').addEventListener('submit', async (e) => {
 $('bouton-sortie').addEventListener('click', async () => {
   // On ferme les DEUX : sur un poste partagé, laisser le rideau ouvert dispenserait le suivant de la
   // clé, et « fermer la session » ne fermerait qu'à moitié.
-  await Promise.all([
-    fetch('/api/session', { method: 'DELETE' }).catch(() => {}),
-    fetch('/api/acces', { method: 'DELETE' }).catch(() => {}),
-  ]);
+  //
+  // ET ON VÉRIFIE QUE C'EST FAIT. Relevé par une revue adverse (12 oct. 2026) : la première version
+  // avalait les erreurs et affichait l'écran de la clé quoi qu'il arrive. Réseau coupé, les cookies
+  // restaient en place — la personne suivante rechargeait la page et reprenait la session de la
+  // précédente, à son nom. Une déconnexion qu'on affiche sans l'avoir obtenue est pire que pas de
+  // bouton du tout : elle fait partir quelqu'un rassuré à tort.
+  const ferme = async (chemin) => {
+    try { return (await fetch(chemin, { method: 'DELETE' })).ok; } catch { return false; }
+  };
+  const [session, rideau] = await Promise.all([ferme('/api/session'), ferme('/api/acces')]);
+  if (!session || !rideau) {
+    afficherErreur($('erreur-demande'),
+      "La session N'A PAS pu être fermée : le serveur n'a pas répondu. Vous êtes toujours connecté. Réessayez, et si vous êtes sur un poste partagé, fermez le navigateur avant de le laisser.");
+    return;
+  }
   resultats.replaceChildren();
   afficherEtape('acces');
 });

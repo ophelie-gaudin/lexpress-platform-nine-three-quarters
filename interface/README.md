@@ -22,10 +22,19 @@ navigateur ──► /api/creer (Vercel) ──► POST /functions/v1/create-gif
 
 **La clé d'accès est un rideau, pas une serrure.** Elle ne donne aucun pouvoir, ne nomme personne, et
 ne protège pas le service : qui détient un jeton personnel peut de toute façon appeler l'API Supabase
-directement, sans passer par cette page. Ce qu'elle apporte réellement : elle retire de l'internet
-public un formulaire dont le bouton fabrique des accès à des articles payants. Plus de robot qui sonde
-`/api/session`, plus de page trouvable par hasard, et une faille future dans la page n'est plus
-atteignable par un anonyme. Elle réduit la surface, elle ne remplace pas le jeton.
+directement, sans passer par cette page. Ce qu'elle apporte réellement : plus de robot qui sonde
+`/api/session` et `/api/creer`, et une faille future dans ces routes qui n'est plus atteignable par un
+anonyme. Elle réduit la surface, elle ne remplace pas le jeton.
+
+**Elle ne cache pas la page, et il ne faut pas le croire.** Le HTML est statique et public : n'importe
+qui peut demander `GET /`, lire le code de l'écran du jeton, et retirer l'attribut `hidden` dans son
+navigateur. Le dépôt lui-même est public. Ce qui est gardé, ce sont les ROUTES — ce que l'écran permet
+de faire, pas le fait de le voir. Relevé par une revue adverse le 12 octobre 2026, parce que ce
+document promettait l'inverse.
+
+**Ce n'est pas un second facteur.** Deux secrets qu'on connaît ne font pas deux facteurs
+indépendants : quelqu'un qui obtient le jeton d'une personne obtient souvent la clé d'équipe par le
+même chemin. C'est de la défense en profondeur, pas de l'authentification forte.
 
 **Elle garde l'API, pas seulement l'affichage.** `/api/session` et `/api/creer` la vérifient en
 premier : un cookie de session parfaitement valide sans le rideau est refusé. Une barrière qui ne vit
@@ -42,6 +51,14 @@ neuve. Alors on ne compte pas : on fait payer. Chaque essai coûte un `scrypt` d
 seconde, soit sept heures de machine pour cent mille essais. **Ça ne dispense pas d'une clé longue** :
 prenez-la générée, pas inventée.
 
+> **Et ce coût est payé par NOTRE serveur.** La revue du 12 octobre l'a relevé : la défense contre la
+> devinette était aussi un amplificateur de déni de service — n'importe qui pouvait déclencher le
+> calcul en boucle. Deux garde-fous depuis : une valeur hors des longueurs admises est refusée **sans
+> calculer**, et au-delà de deux calculs simultanés dans une instance, la route rend `429` au lieu de
+> saturer. Ça borne le processeur d'une instance, **pas la facture** : si la charge fait démarrer
+> d'autres instances, c'est au pare-feu de Vercel de répondre, pas à ce code. Activez-le si vous voyez
+> des rafales de `cle_acces_refusee`.
+
 ## Chacun son jeton
 
 **Le déploiement ne détient aucun jeton de service.** Chaque personne entre le sien ; l'interface le
@@ -56,8 +73,14 @@ perdues :
 | couper quelqu'un | impossible sans couper tout le monde | `revoke_api_client('interface-claire')` |
 | un départ | changer le secret, prévenir toute l'équipe | révoquer une ligne, personne d'autre n'est touché |
 
-Et une quatrième, qui n'a l'air de rien : **les variables de Vercel ne valent plus grand-chose.** Qui
-les obtiendrait n'obtiendrait pas de quoi fabriquer un seul lien.
+Et une quatrième : **les variables de Vercel ne suffisent plus à fabriquer un lien.** Qui les
+obtiendrait n'aurait aucun jeton de service.
+
+> **Nuance apportée par la revue du 12 octobre, et elle compte.** Ce paragraphe a d'abord dit que ces
+> variables « ne valaient plus grand-chose ». C'est faux : `INTERFACE_SECRET_SESSION` descelle les
+> cookies. Qui l'obtient **et** intercepte le cookie d'une personne connectée en retire son jeton
+> personnel en clair. Les variables valent donc encore beaucoup — simplement, il faut deux choses au
+> lieu d'une.
 
 ### Comment le jeton est gardé
 
@@ -212,7 +235,7 @@ Vérifier ensuite, dans l'ordre :
 | Problème | Geste | Effet |
 | --- | --- | --- |
 | une personne s'en va, ou son jeton a fuité | `SELECT public.revoke_api_client('interface-claire');` | elle ne crée plus rien, **à la demande suivante**, et personne d'autre n'est touché |
-| la clé d'accès a circulé trop largement | changer `INTERFACE_CLE_ACCES`, redéployer | les rideaux déjà ouverts le restent trente jours — pour les refermer tout de suite, changer aussi `INTERFACE_SECRET_SESSION` |
+| la clé d'accès a circulé trop largement | changer `INTERFACE_CLE_ACCES`, redéployer | **tous les rideaux déjà ouverts se referment sur-le-champ** : la signature du cookie est liée à la clé en vigueur. Retirer la variable ferme aussi |
 | il faut fermer toutes les sessions d'un coup | changer `INTERFACE_SECRET_SESSION`, redéployer | tous les cookies en cours deviennent indéchiffrables ; chacun recolle son jeton |
 | il faut tout arrêter | révoquer chaque client `interface-*` | plus aucun lien créé depuis l'interface |
 
@@ -227,6 +250,19 @@ immédiate, révoquer **et** changer la clé de scellement.
 cela gêne, activer la *Deployment Protection* de Vercel par-dessus ; les deux se cumulent sans
 conflit.
 
+## Ce qui reste ouvert, et qui ne dépend pas de cette interface
+
+Une revue adverse indépendante (GPT-6.1, 12 octobre 2026) n'a trouvé **aucun moyen pour un anonyme de
+créer un lien sans jeton valide**, ni de lire les tables fermées. Elle a relevé quatre points qui
+vivent ailleurs que dans ce dossier, et qui demandent une décision plutôt qu'un correctif :
+
+| Point | Où | Pourquoi ça compte |
+| --- | --- | --- |
+| **Aucun plafond de création** | fonction Edge | un jeton volé fabrique autant d'accès qu'il veut, jusqu'à 365 jours, et les révoquer ne rappelle pas les liens déjà produits. Le plafond de dix adresses est celui de l'interface, pas celui de l'API |
+| **`fake_body` ouvert à tous les jetons** | fonction Edge | un appel direct peut publier un texte de démonstration sous le domaine de lecture. La bannière limite la tromperie, pas le fait |
+| **Le filtre de redirection arrive après la requête** | `_shared/arc.mjs` | `fetch` suit la redirection, puis on vérifie où l'on a atterri : la requête sortante a déjà eu lieu. Aucune URL exploitable identifiée |
+| **L'assainissement ne décode pas les entités** | `_shared/arc.mjs` | `java&#x73;cript:` traverse le filtre — vérifié. Il faudrait maîtriser le contenu Arc, et la page de lecture a sa propre liste blanche. Mais le principe de cette fonction est justement de ne pas s'y fier |
+
 ## Quand ça casse
 
 Les deux fonctions écrivent une ligne JSON par incident, visible dans Vercel → **Logs**. Même principe
@@ -236,6 +272,7 @@ le jeton d'un lien EST l'accès à l'article premium. On nomme les adresses, qui
 | `evenement` | Ce qui s'est passé |
 | --- | --- |
 | `cle_acces_refusee` | quelqu'un s'est trompé de clé — ou cherche. Une rafale ici est le signal à surveiller |
+| `verification_cle_saturee` | trop de vérifications simultanées : la route rend 429. Une rafale signale une tentative de saturation |
 | `jeton_mal_forme` | une valeur collée de travers ; refusée sans appeler le service |
 | `jeton_refuse` | le service ne reconnaît pas ce jeton, ou il est révoqué |
 | `jeton_revoque_en_session` | un jeton valide à l'entrée a été révoqué depuis ; la session est effacée |
@@ -257,6 +294,11 @@ npm test        # inclut validate-interface.mjs
 ```
 
 Les contrôles qui comptent, et qu'on peut casser exprès pour les voir échouer :
+
+- **changer la clé d'accès referme les rideaux ouverts**, et la retirer ferme la porte ;
+- **au-delà de deux calculs simultanés, la route refuse sans calculer** ;
+- **une déconnexion qui échoue est dite**, et la page ne bascule pas ;
+- **seul un `400` du service vaut reconnaissance d'un jeton** — un `502` de passerelle dit « revenez » ;
 
 - **sans session, le service n'est pas appelé** — pas « l'appel échoue » : pas appelé. Le test compte
   les appels sortants et exige zéro ;

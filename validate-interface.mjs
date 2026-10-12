@@ -22,7 +22,8 @@ import { readFileSync } from 'node:fs';
 import { handlerCreer, handlerSession, sonderJeton, decouperAdresses, MAX_ADRESSES, API_PAR_DEFAUT } from './interface/handlers.mjs';
 import { handlerAcces } from './interface/handlers.mjs';
 import { FORME_JETON, ouvrirJeton, scellerJeton, lireCookie, origineAcceptable } from './interface/session.mjs';
-import { LONGUEUR_MIN_CLE, accesValide, cleValide, signerAcces } from './interface/acces.mjs';
+import { CALCULS_SIMULTANES, LONGUEUR_MIN_CLE, TropDeCalculs, accesValide, cleValide, signerAcces } from './interface/acces.mjs';
+import { trierUrls } from './gift-links/functions/_shared/arc-id.mjs';
 import { expliquer, expliquerPanne, TRADUCTIONS } from './interface/motifs.mjs';
 import { titreDepuisAdresse, rubriqueDepuisAdresse, decrireEtat, formaterEcheance } from './interface/presentation.mjs';
 import { CLES_ACCEPTEES } from './gift-links/functions/_shared/corps.mjs';
@@ -52,7 +53,7 @@ const sondeur = (statut) => {
   } };
 };
 
-const cookieAcces = (decalageMs = 3600_000) => `acces=${signerAcces(SECRET, Date.now() + decalageMs)}`;
+const cookieAcces = (decalageMs = 3600_000, cle = CLE) => `acces=${signerAcces(SECRET, cle, Date.now() + decalageMs)}`;
 
 /**
  * Par défaut, les requêtes de ce fichier portent le cookie du RIDEAU : les blocs qui suivent
@@ -118,11 +119,17 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   const valeur = biscuit.slice('acces='.length).split(';')[0];
   check(!biscuit.includes(CLE) && !Buffer.from(valeur.split('.')[0], 'base64url').toString().includes(CLE),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : la clé n’est pas recopiée dans le cookie — celui-ci ne porte qu’une date de fin');
-  check(accesValide(SECRET, valeur), 'et le cookie rendu est accepté ensuite');
-  check(!accesValide(SECRET, signerAcces(SECRET, Date.now() - 1000)), 'un rideau périmé est refusé');
-  check(!accesValide(SECRET, `${valeur.split('.')[0]}.signatureBidon`), 'une signature retouchée est refusée');
-  check(!accesValide('y'.repeat(48), valeur), 'un cookie signé avec un autre secret est refusé');
-  check(!accesValide(SECRET, 'nimportequoi') && !accesValide(SECRET, null), 'un cookie bricolé est un refus ordinaire');
+  check(accesValide(SECRET, CLE, valeur), 'et le cookie rendu est accepté ensuite');
+  check(!accesValide(SECRET, CLE, signerAcces(SECRET, CLE, Date.now() - 1000)), 'un rideau périmé est refusé');
+  check(!accesValide(SECRET, CLE, `${valeur.split('.')[0]}.signatureBidon`), 'une signature retouchée est refusée');
+  check(!accesValide('y'.repeat(48), CLE, valeur), 'un cookie signé avec un autre secret est refusé');
+  check(!accesValide(SECRET, CLE, 'nimportequoi') && !accesValide(SECRET, CLE, null), 'un cookie bricolé est un refus ordinaire');
+
+  // ── UNE ROTATION QUI NE COUPE RIEN N'EST PAS UNE ROTATION. Relevé par une revue adverse.
+  check(!accesValide(SECRET, 'une-toute-autre-cle-partagee', valeur),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : changer la clé d’accès invalide SUR-LE-CHAMP les rideaux déjà ouverts — la signature est liée à la clé en vigueur, pas au seul secret du déploiement');
+  check(!accesValide(SECRET, '', valeur) && !accesValide(SECRET, 'courte', valeur),
+    'et retirer la clé de la configuration ferme la porte, y compris pour qui l’avait déjà franchie');
 
   // Fermeture par défaut : une couche de sécurité qu'on saute en silence est le pire des deux mondes.
   for (const [cas, env] of [
@@ -135,6 +142,28 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   }
   check((await cleValide('courte', 'courte', SECRET)) === false, `une clé de moins de ${LONGUEUR_MIN_CLE} caractères ne vaut rien, même si elle correspond`);
   check((await cleValide('', '', SECRET)) === false, 'une clé vide ne correspond jamais à une configuration vide');
+
+  // ── LE COÛT PROTÉGEAIT DE LA DEVINETTE ET OUVRAIT UN DÉNI DE SERVICE. Relevé par une revue adverse :
+  //    n'importe qui pouvait déclencher un quart de seconde de calcul, payé par NOTRE serveur.
+  {
+    const bloquees = [];
+    const tentatives = Array.from({ length: CALCULS_SIMULTANES + 3 }, () =>
+      cleValide('x'.repeat(40), CLE, SECRET).catch((e) => { bloquees.push(e); return null; }));
+    await Promise.all(tentatives);
+    check(bloquees.length >= 3 && bloquees.every((e) => e instanceof TropDeCalculs),
+      `C’EST LA PROPRIÉTÉ QUI COMPTE : au-delà de ${CALCULS_SIMULTANES} calculs simultanés, les suivants sont refusés SANS calculer — le processeur qu’on protège est celui de l’instance, et il se borne par instance`);
+
+    const t0 = Date.now();
+    check((await cleValide('trop-courte', CLE, SECRET)) === false && (await cleValide('y'.repeat(300), CLE, SECRET)) === false,
+      'une valeur hors des longueurs admises est refusée');
+    check(Date.now() - t0 < 50, 'et elle est refusée SANS payer le scrypt — ce qui se refuse sans calculer se refuse sans calculer');
+
+    const sature = (await avecJournal(() => Promise.all(
+      Array.from({ length: CALCULS_SIMULTANES + 3 }, () => handlerAcces({ env: ENV })(requete('/api/acces', { corps: { cle: 'z'.repeat(40) } }))),
+    ))).resultat;
+    check(sature.some((r) => r.status === 429), 'et la route rend 429 plutôt que de laisser saturer l’instance');
+    check(sature.every((r) => r.status !== 200), 'aucune de ces tentatives n’ouvre quoi que ce soit');
+  }
 
   const ailleurs = (await avecJournal(() => ouvrir(requete('/api/acces', { corps: { cle: CLE }, origine: 'https://evil.example' })))).resultat;
   check(ailleurs.status === 403, 'une requête venue d’une autre origine est refusée');
@@ -263,6 +292,15 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
     'un 400 — « aucune URL exploitable » — prouve que l’authentification est passée : le jeton est reconnu');
   check((await sonderJeton({ fetch: async () => new Response('{}', { status: 401 }), url: 'https://x', jeton: JETON })).reconnu === false,
     'et seul un 401 prouve le contraire');
+  // SEUL LE 400 VAUT RECONNAISSANCE. Relevé par une revue adverse : accepter « tout sauf 401 et 503 »
+  // laissait un 502 de passerelle ouvrir une session qui ne pouvait rien créer.
+  for (const statut of [200, 404, 500, 502, 504]) {
+    const r = await sonderJeton({ fetch: async () => new Response('{}', { status: statut }), url: 'https://x', jeton: JETON });
+    check(r.indisponible === true && r.reconnu !== true,
+      `C’EST LA PROPRIÉTÉ QUI COMPTE : un ${statut} ne prouve aucune authentification — il dit « revenez », il n’ouvre pas une session qui ne pourrait rien créer`);
+  }
+  check(trierUrls([]).retenus.length === 0,
+    'et la sonde repose bien sur le module réel : une liste vide ne retient aucune URL, donc le service répond 400 avant tout chargement');
 }
 
 // ── LA CONFIGURATION INCOMPLÈTE FERME LA PORTE. Sans clé de scellement, le repli naturel serait de
@@ -513,8 +551,11 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
   check(/value = ''/.test(codeSeul), 'et il vide le champ de saisie : un jeton ne reste pas affiché dans une page ouverte');
   check(/!depart\.acces \? 'acces'/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : au chargement, le rideau passe AVANT la session — les deux cookies n’ont pas la même durée de vie, et sans cette priorité la page montrerait le formulaire à quelqu’un dont chaque demande sera refusée');
-  check(/\/api\/acces[\s\S]*method: 'DELETE'/.test(codeSeul.replace(/\n/g, '\n')) || /fetch\('\/api\/acces', \{ method: 'DELETE' \}\)/.test(codeSeul),
+  check(/ferme\('\/api\/session'\)/.test(codeSeul) && /ferme\('\/api\/acces'\)/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : « Fermer la session » referme AUSSI le rideau — sinon, sur un poste partagé, le suivant est dispensé de la clé');
+  check(/if \(!session \|\| !rideau\)[\s\S]{0,400}return;/.test(codeSeul),
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une déconnexion qui échoue est DITE, et la page ne bascule pas — l’afficher sans l’avoir obtenue ferait partir quelqu’un rassuré à tort, en laissant sa session ouverte au suivant');
+  check(/\.ok/.test(codeSeul), 'et c’est la réponse du serveur qui en décide, pas l’absence d’exception');
   check(!/etape === 'demande'[\s\S]{0,200}localStorage/.test(codeSeul), 'et la page ne mémorise aucune étape franchie de son côté : c’est le serveur qui la dit');
   check(!/innerHTML|insertAdjacentHTML|document\.write/.test(codeSeul),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : le script n’insère aucun HTML — les libellés affichés viennent de ce que la personne a collé, et `textContent` ne les interprète pas');
