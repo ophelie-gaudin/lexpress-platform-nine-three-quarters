@@ -63,8 +63,8 @@ La colonne en est le texte actuel du lecteur Europe, sauf le bouton (« Subscrib
 lieu de « Subscribe to L'Express Europe ») et le nouveau lien d’accueil. La colonne fr
 est le texte actuel du lecteur France, sauf le bouton et « Lire la suite sur
 fr.lexpress.eu » : un article de fr.lexpress.eu ne doit jamais afficher « lexpress.fr ».
-La colonne pl est validée par Ophélie : les articles polonais arrivent déjà traduits,
-seuls ces mots fixes sont traduits, une fois.
+La colonne pl s’utilise telle quelle : les articles polonais arrivent déjà traduits,
+seuls ces mots fixes sont traduits, une fois (décision d’Ophélie).
 
 Tous les autres textes du lecteur (chargement, panne technique et réessai, lien inconnu,
 page introuvable, erreur de page) s’affichent sans langue connue : ne les traduis pas, ne
