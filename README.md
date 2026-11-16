@@ -665,3 +665,13 @@ réappliquer en PROD pour ce correctif. `validate-europe-schema.mjs` reconstruit
 schéma local et compare les contrats utilisés aux définitions PROD observées.
 Avant toute publication, traiter aussi le filtre et les langues du lecteur externe :
 voir [diagnostic et runbook](docs/implementation/europe-language-hosts-20261116.md).
+
+### Langue des articles
+
+La migration additive 017 stocke `articles.language` (EUR existant=en, France=fr).
+La génération déduit en/fr/pl de l’hôte source et conserve les identifiants Arc
+distincts ; `get_gift_article_for_edition_v2` ajoute la langue au contrat de lecture
+sans changer les RPC historiques. Les origines des liens restent inchangées.
+Le patch lecteur, le prompt Lovable et les retours arrière par étape sont dans
+[la procédure de langue](docs/implementation/article-language-release-20261116.md).
+Ne pas déployer ni fusionner sans accord écrit d’Ophélie.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 const db = new PGlite();
 await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
-for (const file of readdirSync('gift-links/supabase').filter(f=>/^\d.*\.sql$/.test(f)&&!f.startsWith('004')).sort()) await db.exec(readFileSync(`gift-links/supabase/${file}`,'utf8'));
+for (const file of readdirSync('gift-links/supabase').filter(f=>/^\d.*\.sql$/.test(f)&&!f.startsWith('004')&&f<'017').sort()) await db.exec(readFileSync(`gift-links/supabase/${file}`,'utf8'));
 const q = async (sql,args)=>(await db.query(sql,args)).rows;
 const live = JSON.parse(readFileSync('docs/evidence/europe-database-contracts-20261116.json','utf8'));
 for (const contract of live) {

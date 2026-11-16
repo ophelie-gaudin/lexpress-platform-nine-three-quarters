@@ -1,5 +1,9 @@
 # Domaines Europe — diagnostic et préparation, 16 novembre 2026
 
+Suite du 16 novembre : le comportement cible et la migration de langue sont désormais
+décrits dans `article-language-release-20261116.md` ; ses instructions remplacent
+ci-dessous les hypothèses de déploiement sans migration et de langue non stockée.
+
 Aucune écriture PROD, aucun lien créé, aucun déploiement. Migration d'hébergement hors périmètre.
 
 ## Preuves vivantes (GET seulement)

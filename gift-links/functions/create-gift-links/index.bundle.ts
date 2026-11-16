@@ -127,7 +127,7 @@ function arcIdDepuisUrl(url) {
 
   const m = u.pathname.replace(/\/+$/, '').match(ARC_ID);
   if (!m) return { erreur: `aucun identifiant Arc dans l’URL : ${u.pathname}` };
-  return { edition: editionDepuisUrl(u.href), arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
+  return { edition: editionDepuisUrl(u.href), language: siteDepuisUrl(url).language, arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
 }
 
 /** Sépare le bon grain de l'ivraie sans rien perdre : les deux listes sont rendues. */
@@ -135,7 +135,7 @@ function trierUrls(urls) {
   const retenus = [], rejets = [];
   for (const url of Array.isArray(urls) ? urls : []) {
     const r = arcIdDepuisUrl(url);
-    if (r.arcId) retenus.push({ url, edition: r.edition, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
+    if (r.arcId) retenus.push({ url, edition: r.edition, language: r.language, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
     else rejets.push({ url, erreur: r.erreur });
   }
   return { retenus, rejets };
@@ -578,7 +578,7 @@ Deno.serve(async (req) => {
     const demo = corps.fake_body === true && !c.body;
     if (demo) c.body = corpsDeDemonstration({ ...c, edition: a.edition });
     aCacher.push({
-      edition: a.edition, arc_id: a.arcId,
+      edition: a.edition, language: a.language, arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
@@ -633,7 +633,7 @@ Deno.serve(async (req) => {
       continue;
     }
     liens.push({
-      url: p.url, edition: p.edition, arc_id: p.arcId, token: l.token,
+      url: p.url, edition: p.edition, language: p.language, arc_id: p.arcId, token: l.token,
       link: l.link,
       expires_at: l.expires_at,
       // L'appelant SAIT ce qu'il envoie : un article complet, ou seulement son aperçu.

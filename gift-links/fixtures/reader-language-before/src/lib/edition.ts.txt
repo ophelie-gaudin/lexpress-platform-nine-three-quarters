@@ -1,0 +1,47 @@
+export type Edition = "FR" | "EUR";
+export type ReaderContext = { edition: Edition; environment: "TEST" | "PROD" };
+
+// Public domains always decide the edition. Preview hosts always use TEST.
+export function resolveReader(hostname: string): ReaderContext {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "articles.lexpress.fr" || host === "pixel-perfect-render-5344.lovable.app") return { edition: "FR", environment: "PROD" };
+  if (host === "articles.lexpress.eu") return { edition: "EUR", environment: "PROD" };
+  return { edition: host === "fr.localhost" ? "FR" : "EUR", environment: "TEST" };
+}
+
+export const editions = {
+  FR: { lang: "fr", locale: "fr-FR", home: "https://www.lexpress.fr/", domain: "lexpress.fr", subscription: "https://abonnements-digitaux.lexpress.fr/offres", pianoSite: 370118 },
+  EUR: { lang: "en", locale: "en-GB", home: "https://www.lexpress.eu/", domain: "lexpress.eu", subscription: "https://www.lexpress.eu/subscribe/", pianoSite: 647738 },
+} as const;
+
+export const copy = {
+  FR: {
+    title: "Article offert — L'Express", description: "Un article de L'Express vous a été offert. Bonne lecture.",
+    giftedBy: "Article offert par", subscribe: "S'abonner à L'Express", by: "Par", published: "Publié le",
+    continueReading: "Lire la suite sur lexpress.fr", gifted: "Cet article vous a été offert. Pour lire L'Express sans limite, abonnez-vous.",
+    expired: "Ce lien a expiré.", withdrawn: "Cet article n'est plus disponible.", unknown: "Ce lien n'existe pas.",
+    limited: "Les articles offerts sont accessibles pendant une durée limitée.",
+    unavailable: "Impossible d'afficher cet article pour le moment.", technical: "Un problème technique nous empêche de charger l'article. Veuillez réessayer dans quelques instants.",
+    retry: "Réessayer", loading: "Chargement…", loadingArticle: "Chargement de l'article",
+    notFound: "Page introuvable", invalidLink: "Le lien que vous avez suivi n'est pas valide.",
+    pageError: "Cette page n'a pas pu être chargée", pageErrorDetail: "Un problème technique est survenu. Vous pouvez réessayer ou revenir à l'accueil.", home: "Retour à l'accueil",
+  },
+  EUR: {
+    title: "Gift article — L'Express Europe", description: "An article from L'Express Europe has been shared with you. Enjoy your read.",
+    giftedBy: "Article shared by", subscribe: "Subscribe to L'Express Europe", by: "By", published: "Published on",
+    continueReading: "Continue reading on lexpress.eu", gifted: "This article has been shared with you. Subscribe for unlimited access to L'Express Europe.",
+    expired: "This link has expired.", withdrawn: "This article is no longer available.", unknown: "This link does not exist.",
+    limited: "Gift articles are available for a limited time.",
+    unavailable: "This article cannot be displayed right now.", technical: "A technical problem is preventing us from loading this article. Please try again in a few moments.",
+    retry: "Try again", loading: "Loading…", loadingArticle: "Loading article",
+    notFound: "Page not found", invalidLink: "The link you followed is not valid.",
+    pageError: "This page didn't load", pageErrorDetail: "Something went wrong on our end. You can try again or head back home.", home: "Go home",
+  },
+} as const;
+
+export function formatPublicationDate(iso: string | null | undefined, edition: Edition): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(editions[edition].locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+}

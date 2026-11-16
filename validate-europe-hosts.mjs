@@ -49,12 +49,12 @@ const context = vm.createContext({
   createClient: () => ({rpc: async (name,args) => {
     rpcCalls.push({name,args});
     if (name === 'verify_api_client') return {data:[{ok:true,client_id:'fake-client',name:'fixture'}]};
-    if (name === 'create_gift_links_for_edition') return {data:args.p_arc_ids.map(arc_id => ({arc_id, token:'a'.repeat(32),link:`https://articles.lexpress.${args.p_edition === 'EUR' ? 'eu' : 'fr'}/a/${'a'.repeat(32)}`, state:'created'}))};
+    if (name === 'create_gift_links_for_edition') return {data:args.p_arc_ids.map(arc_id => ({arc_id, token:(arc_id === id ? 'a' : 'b').repeat(32),link:`https://articles.lexpress.${args.p_edition === 'EUR' ? 'eu' : 'fr'}/a/${(arc_id === id ? 'a' : 'b').repeat(32)}`, state:'created'}))};
     return {data:[]};
   }}),
   fetch: async value => {
     const url = new URL(value), site = url.searchParams.get('website');
-    return new Response(JSON.stringify({_id:url.searchParams.get('_id'),websites:{[site]:{website_url:`/article-${id}`}},headlines:{basic:'Fixture'},content_elements:[{type:'text',content:'Corps de fixture'}]}));
+    return new Response(JSON.stringify({_id:url.searchParams.get('_id'),websites:{[site]:{website_url:`/article-${url.searchParams.get('_id')}`}},headlines:{basic:'Fixture'},content_elements:[{type:'text',content:'Corps de fixture'}]}));
   },
 });
 vm.runInContext(stripTypeScriptTypes(source), context);
@@ -64,6 +64,9 @@ for (const host of ['pl.lexpress.eu','fr.lexpress.eu','www.lexpress.eu','www.lex
   assert.equal(response.status, 200);
   const result = await response.json(), edition = host.endsWith('.eu') ? 'EUR' : 'FR';
   assert.equal(result.links[0].edition, edition);
+  const language = host.startsWith('pl.') ? 'pl' : host.startsWith('fr.') || edition === 'FR' ? 'fr' : 'en';
+  assert.equal(result.links[0].language, language);
+  assert.equal(rpcCalls.find(c=>c.name==='cache_articles').args.p_articles[0].language, language);
   assert.equal(result.links[0].content, 'full');
   assert.equal(result.links[0].link, `https://articles.lexpress.${edition === 'EUR' ? 'eu' : 'fr'}/a/${'a'.repeat(32)}`);
   assert.equal(rpcCalls.find(c=>c.name==='cache_articles').args.p_articles[0].edition, edition);
@@ -87,3 +90,18 @@ const loop = await chargerArticle(arcIdDepuisUrl(example), {fetch:async()=>{endl
 assert.ok(loop.erreur);
 assert.equal(endless,5);
 console.log('Europe : ambiguïté multisite refusée, alias public et limites des redirections vérifiés.');
+
+// Deux traductions réelles d'un même sujet restent deux articles Arc indépendants.
+rpcCalls.length = 0;
+const frenchId = '5IZJUWHEXBCELAV4FGFPXU3LTQ';
+const mixed = await handler(new Request('https://local.invalid', {method:'POST',headers:{'x-gift-service-token':'fake'},body:JSON.stringify({urls:[example,`https://fr.lexpress.eu/a-${frenchId}`,example]})}));
+const mixedResult = await mixed.json();
+assert.equal(mixed.status,200);
+assert.equal(new Set(mixedResult.links.map(l=>l.arc_id)).size,2);
+assert.equal(new Set(mixedResult.links.map(l=>l.token)).size,2);
+const identifiers=rpcCalls.find(c=>c.name==='create_gift_links_for_edition').args.p_arc_ids;
+assert.deepEqual([...identifiers].sort(),[id,frenchId].sort());
+const cached=rpcCalls.find(c=>c.name==='cache_articles').args.p_articles;
+assert.equal(cached.find(a=>a.arc_id===id).language,'pl');
+assert.equal(cached.find(a=>a.arc_id===frenchId).language,'fr');
+console.log('Fonction : lot FR/PL avec identifiants fournis, langues et liens distincts, répétition PL dédupliquée par Arc ID.');
