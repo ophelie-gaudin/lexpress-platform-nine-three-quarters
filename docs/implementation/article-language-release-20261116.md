@@ -26,8 +26,13 @@ Migration additive `gift-links/supabase/017-article-language.sql` :
 - cache_articles reçoit language et refuse qu’un article existant change de langue
   (« la langue d’un article existant ne change pas ») ; il ne dégrade toujours pas les corps ;
 - nouvelle RPC `get_gift_article_for_edition_v2` : même contrôle/lecture que l’ancienne,
-  une seule journalisation, colonne language supplémentaire. RPC historiques inchangées.
-  Les refus renvoient une langue NULL, pas une métadonnée d’un autre token/édition ;
+  une seule journalisation, colonne language supplémentaire. RPC historiques inchangées ;
+- `gift_link_status_v107` (disponibilité d’un lien, appelée sous service_role) accepte les
+  adresses pl.lexpress.eu et fr.lexpress.eu, rattachées à l’édition Europe. Avant, une seule
+  de ces adresses faisait échouer tout le lot (« URLs invalides »). Seules les deux
+  expressions d’hôte changent ; le retour arrière remet la définition 015.
+  Un lien expiré ou retiré rend la langue de son article (et rien d’autre), pour traduire
+  l’écran de refus ; un jeton inconnu ou d’une autre édition rend une langue NULL ;
 - `lock_timeout` de 3 s (proposé, optionnel) : la migration échoue vite au lieu de bloquer
   les lectures derrière un verrou ; elle est rejouable, y compris après le retour arrière,
   puisque la langue se retrouve par l’hôte canonique.
@@ -56,16 +61,37 @@ puis GET de chaque cible. Preuve `docs/evidence/europe-subscription-labels-20261
 | fr Europe | S'abonner | https://fr.lexpress.eu/abonnement/ | https://fr.lexpress.eu/ |
 | pl | Subskrypcja | https://pl.lexpress.eu/subskrypcja/ | https://pl.lexpress.eu/ |
 
-Le lien vers l’accueil (édition Europe seulement, le lecteur France ne change pas)
-utilise le domaine comme libellé neutre : aucun libellé polonais inventé. En aperçu,
-le libellé existant est conservé pour lexpress.fr et pour l’anglais ; pour fr.lexpress.eu
-et pl.lexpress.eu, le domaine source sert de libellé. Un article de fr.lexpress.eu
-reprend les textes français existants du lecteur et la date fr-FR. L’attribut lang ne
-couvre que le contenu (rubrique, titre, chapô, corps). Changement visible en anglais :
-le bouton d’article passe de « Subscribe to L'Express Europe » à « Subscribe ». La table simple est dans
-`docs/reader-reference/src/lib/articleLanguage.ts`. L’abonnement France historique
-reste inchangé. Les autres textes PL du lecteur (états, réessai, explication, etc.)
-restent une décision de traduction à prendre ; cette demande ne fournit pas ces textes.
+## Textes fixes de la page de lecture (décision d’Ophélie du 16/11)
+
+Les articles de pl.lexpress.eu sont déjà traduits. Seuls les mots fixes du lecteur sont
+traduits, une fois, et utilisés quand la langue de l’article est `pl`. Pour chaque texte,
+le libellé réel du site a été cherché d’abord par GET public (article, accueil, abonnement,
+page d’erreur) ; sinon traduction. Preuve et origine de chaque texte, clé par clé :
+`docs/evidence/europe-reader-labels-20261116.json` (`relevé` avec URL, `traduit`, ou
+`lecteur` = texte existant du lecteur). Table : `docs/reader-reference/src/lib/articleLanguage.ts`.
+
+Relevés en polonais : « Subskrypcja » (accueil), « Autor: » (article), « Przejdź na stronę
+główną » (page d’erreur du site), et les fragments « Zapisz się do L'Express » et « Odblokuj
+nieograniczony dostęp do wszystkich naszych artykułów » (menu), assemblés dans la phrase
+d’offre. Le site affiche la date seule (16.11.2026 09:45) : « Opublikowano » est traduit.
+Le ton suit le site (tutoiement, « Twój klucz do informacji »). Tout le reste est traduit.
+
+Français (fr.lexpress.eu) : « Par » et « S'abonner » relevés ; le reste reprend le lecteur
+France, phrase d’offre comprise. Seul écart : « Lire la suite sur fr.lexpress.eu », pour ne
+jamais afficher lexpress.fr. fr.lexpress.eu n’a pas de page d’erreur habillée (« Not Found »
+brut) : « Retour à l'accueil » vient du lecteur France.
+
+Anglais : textes existants du lecteur, sauf le bouton « Subscribe » (décision du 16/11) et
+le nouveau lien d’accueil « Go to the homepage » (relevé sur la page d’erreur du site).
+
+Règles d’affichage : article lu → tout l’habillage dans la langue de l’article, date au
+format de la langue (en-GB, fr-FR, pl-PL). Lien expiré ou retiré → écran de refus et bouton
+dans la langue rendue par la RPC v2. Sans langue connue (chargement, panne, lien inconnu,
+page introuvable) → repli du contexte : anglais sur articles.lexpress.eu, avec l’ancien
+bouton « Subscribe to L'Express Europe ». Le lecteur France ne change pas et n’a pas de lien
+d’accueil ajouté. L’attribut lang couvre le contenu (rubrique, titre, chapô, corps).
+Limite : l’en-tête (« Article offert par ») et les pages « introuvable » / « erreur » ne sont
+pas dans le source lecteur retrouvé ; le patch ne les couvre pas, le message Lovable si.
 
 ## Lovable
 
@@ -73,7 +99,8 @@ Message prêt à coller : `lovable-article-language-prompt.md` dans ce dossier.
 Patch de référence : `docs/patches/reader-europe-hosts.patch` ; sources après patch :
 `docs/reader-reference/src/`. Rien n’a été envoyé et le projet externe reste intact.
 `git apply --check` a réussi sur le source lecteur retrouvé. Les tests appliquent
-le patch à une copie, compilent ses vrais composants et vérifient les boutons,
+le patch à une copie, contrôlent ses types (`tsc` strict, modules Lovable absents
+déclarés au plus juste), exécutent ses vrais composants et vérifient les boutons,
 URL, attributions et RPC en simulation. Pas de recette navigateur ni de publication.
 
 ## Tests
@@ -99,7 +126,32 @@ point d’exposition : dès qu’elle est publiée, tout client de l’API peut 
 PL/FR. Publiée avant le lecteur, ces liens afficheraient « This article cannot be
 displayed right now ». Le nouveau lecteur, lui, fonctionne avec les articles existants.
 
+### 0. Préparer TEST (avant de coller le message Lovable)
+
+La recette Lovable lit la base TEST du lecteur (référence à relever dans le projet Lovable :
+elle n’est pas dans ce dépôt). Sans la RPC v2 sur TEST, chaque cas de recette afficherait
+« indisponible ». Après accord : appliquer 017 sur TEST, y publier la fonction de cette PR,
+créer un lien en, un fr.lexpress.eu, deux pl.lexpress.eu, puis faire expirer l’un des
+polonais et retirer l’autre lien de test au choix (UPDATE sur ces seules lignes de TEST).
+Transmettre ces liens avec le message. Retour arrière : aucun nécessaire, TEST seulement.
+
 ### 1. Migration 017
+
+Contrôles préalables en lecture seule (SELECT), à joindre à la demande d’accord :
+
+```sql
+-- a. Adresses canoniques que le nouveau lecteur, plus strict, refuserait. Attendu : 0.
+SELECT edition, count(*) FROM articles
+ WHERE canonical_url !~ '^https://((www\.)?lexpress\.(fr|eu)|(pl|fr)\.lexpress\.eu)(/|$)'
+    OR (edition = 'FR') <> (canonical_url ~ '^https://(www\.)?lexpress\.fr(/|$)')
+ GROUP BY edition;
+-- b. Définition PROD de la RPC de disponibilité, que 017 remplace : elle doit être celle de
+--    015-editions.sql (elle n’était pas dans le relevé de contrats du 16/11). Sinon, arrêt.
+SELECT pg_get_functiondef('public.gift_link_status_v107(text,text[])'::regprocedure);
+```
+
+Si a rend des lignes : les corriger (espaces, port) ou assouplir le lecteur avant l’étape 2,
+sinon ces articles deviendraient illisibles à la publication du lecteur.
 
 Depuis le worktree de PR validé, préparer le JSON sans l’exécuter :
 
@@ -123,10 +175,18 @@ curl --fail-with-body --silent --show-error \
 
 Contrôles en SELECT seulement : schéma de language, répartition par édition/langue,
 présence et type de retour de la RPC v2, tokens et expirations inchangés.
-Ne pas appeler une RPC de lecture PROD pour vérifier : elle compte les lectures.
+Ne pas appeler une RPC de lecture PROD avec un vrai jeton : elle compte les lectures.
+Contrôle d’exposition obligatoire avant l’étape 2, sans effet sur les données (testé : un
+jeton inconnu ne compte aucune lecture) : appeler la v2 par l’API REST avec la clé anonyme
+publique du lecteur et le jeton inexistant `00000000000000000000000000000000`, pour
+`p_edition` FR puis EUR. Attendu : HTTP 200, `status: "unknown"`, `language: null`. Une
+autre réponse (404, cache de schéma, droits) interdit de publier le lecteur : il rendrait
+tous les liens, France comprise, « indisponibles ».
 
 Retour arrière SQL : préférer conserver l’ajout compatible et revenir aux anciens
-appelants. Si suppression explicitement décidée, sauvegarder d’abord les langues,
+appelants. Garde : ne jamais l’appliquer tant que le lecteur publié appelle la v2
+(vérifier que la publication Lovable restaurée est bien l’ancienne) ; sinon tous les
+liens deviennent « indisponibles ». Si suppression explicitement décidée, sauvegarder d’abord les langues,
 revenir à la fonction puis au lecteur précédents (dans cet ordre), puis appliquer
 `gift-links/supabase/rollback/017-article-language.sql` via le même endpoint.
 Ce rollback restaure cache_articles 015, supprime v2/trigger/colonne/règle, garde les
@@ -135,8 +195,10 @@ langues PL/FR par l’hôte canonique (testé). Aucun CASCADE, aucune suppressio
 
 ### 2. Lovable (lecteur) — avant la fonction
 
-Faire appliquer le prompt/patch dans le brouillon par le circuit Lovable existant,
-réaliser la recette TEST prévue, puis publier uniquement après accord écrit.
+Coller le message `lovable-article-language-prompt.md` (à partir de « Prépare cette
+modification »), suivi du contenu de `docs/patches/reader-europe-hosts.patch` et des liens
+TEST de l’étape 0. Réaliser la recette TEST prévue, vérifier que le build Lovable passe,
+puis publier uniquement après accord écrit et après le contrôle d’exposition de l’étape 1.
 Le domaine reste articles.lexpress.eu pour EN/FR/PL. Aucun besoin de changer le DNS.
 Ne pas publier la fonction (étape 3) avant que ce lecteur accepte leur canonique et
 leur langue. Les tests locaux ne remplacent pas cette recette de brouillon.
@@ -201,16 +263,32 @@ Non corrigé, assumé : entre la lecture interne et la jointure de la RPC v2, un
 dans la même milliseconde rendrait une langue NULL ; le lecteur refuse alors l’affichage
 (« unavailable ») et un nouvel essai réussit. Aucune donnée exposée.
 
-## Décisions pour Ophélie
+## Revue Claude Fable 5.2 du 16/11 (troisième palier)
 
-1. Textes polonais manquants. Un article polonais affiche l’habillage anglais existant
-   (« By », « Published on », phrase d’offre, écrans d’erreur) car seul « Subskrypcja »
-   est attesté. A : valider cet état provisoire. B : fournir les traductions polonaises.
-   Recommandation : A maintenant, B ensuite.
-2. Phrase d’offre des articles fr.lexpress.eu : elle reprend celle de la France (« Cet
-   article vous a été offert. Pour lire L'Express sans limite, abonnez-vous. ») alors que
-   le bouton mène à fr.lexpress.eu/abonnement/. A : la garder. B : fournir une phrase
-   propre à l’édition Europe. Recommandation : A.
-3. Bouton anglais : « Subscribe » (en-tête du site) remplace « Subscribe to L'Express
-   Europe » sous les articles anglais. A : accepter. B : garder l’ancien libellé pour
-   l’anglais. Recommandation : A, conforme à la consigne « libellé de l’en-tête ».
+Relecteur distinct, mandat « casser », sécurité incluse, sur toute la PR et la procédure.
+Verdict : CHANGES, 1 bloquant, 5 importants, mineurs. Aucune fuite ni SSRF trouvée ; langue
+non contrôlable par l’appelant ; une seule lecture comptée ; lien expiré ou retiré : seule
+la langue sort. Corrigé :
+- types : `RefusalView` recevait « unavailable » (erreur TS2322 en strict) ; branches
+  réordonnées, et un vrai contrôle `tsc` strict ajouté au test (rouge observé, puis vert) ;
+- lecteur plus strict que l’ancien sur les adresses déjà en base : contrôle SELECT a ci-dessus ;
+- lecteur publié sans que la v2 ait jamais répondu en PROD : contrôle d’exposition sans effet ;
+- recette Lovable impossible sans base TEST préparée : étape 0 ;
+- message Lovable : rendu autonome (plus de renvoi au dépôt), textes sans langue retirés de
+  la table, titre de page limité au navigateur sans appel supplémentaire ;
+- `gift_link_status_v107` refusait pl. et fr. : étendue dans 017, restaurée au retour arrière ;
+- recherche d’hôte par `Map` (compatible options TS strictes) ; quatre motifs de refus sans
+  phrase dans l’interface, et mentions « lexpress.fr » montrées pour un article Europe.
+Non corrigé, assumé : « Autor: » reste au singulier pour plusieurs auteurs (forme relevée sur
+le site ; le lecteur ne reçoit qu’une chaîne) ; texte alternatif de repli des images non
+traduit ; un lot multi-éditions peut répondre 500 après création partielle (rejouable).
+Non vérifiable ici : configuration de build du projet Lovable, appelants de la RPC de
+disponibilité, rendu visuel des textes polonais, avis d’un locuteur natif.
+Aperçus de lien (WhatsApp, etc.) : le titre servi reste celui du contexte, pas traduit.
+
+## Décisions d’Ophélie du 16/11 (prises)
+
+1. Textes polonais : traduire une fois les mots fixes de la page de lecture (fait, ci-dessus).
+2. Phrase d’offre des articles fr.lexpress.eu : celle de la France est conservée.
+3. Bouton anglais : « Subscribe ».
+4. Publication sans attendre Codex, après une revue par un modèle Claude Fable.

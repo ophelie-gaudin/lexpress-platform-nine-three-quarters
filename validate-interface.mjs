@@ -506,6 +506,10 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
     'redirection hors domaine : ailleurs.fr',
     'page vide',
     'aucun titre dans la page',
+    'redirection sans destination',
+    'identifiants URL refusés',
+    'même identifiant Arc demandé sous deux langues (en, pl)',
+    'article publié sur plusieurs sites Europe : langue ambiguë',
   ]) check(typeof expliquer(motif) === 'string', `le motif « ${motif} » a une phrase en français`);
   check(expliquer('un motif que personne n’a encore écrit') === null,
     'un motif inconnu rend null — l’interface affiche alors le motif brut plutôt qu’une phrase inventée');

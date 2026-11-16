@@ -1,0 +1,408 @@
+{
+ "fetched_on": "2026-11-16",
+ "method": "GET public, agent générique, texte visible extrait du HTML",
+ "origins": {
+  "relevé": "texte présent sur la page citée",
+  "traduit": "traduction proposée, absente du site",
+  "lecteur": "texte existant du lecteur (France pour fr, Europe pour en)"
+ },
+ "pages": [
+  {
+   "url": "https://pl.lexpress.eu/",
+   "status": 200
+  },
+  {
+   "url": "https://pl.lexpress.eu/europa/dzialania-wrogie-pociagaja-za-soba-konsekwencje-dlaczego-estonia-zamyka-granice-z-rosja-11-21-2026-K2UJ3SHSG5DD7PUIMXBNJZV6DA/",
+   "status": 200
+  },
+  {
+   "url": "https://pl.lexpress.eu/subskrypcja/",
+   "status": 200
+  },
+  {
+   "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
+   "status": 404
+  },
+  {
+   "url": "https://fr.lexpress.eu/",
+   "status": 200
+  },
+  {
+   "url": "https://fr.lexpress.eu/europe/russie-comment-des-filiales-europeennes-confisquees-par-le-kremlin-financent-leffort-de-guerre-11-21-2026-EO5ZUTHGTRB6DMFVAUMW3KLCWU/",
+   "status": 200
+  },
+  {
+   "url": "https://fr.lexpress.eu/abonnement/",
+   "status": 200
+  },
+  {
+   "url": "https://www.lexpress.eu/",
+   "status": 200
+  },
+  {
+   "url": "https://www.lexpress.eu/europe/hostile-actions-have-consequences-why-estonia-is-closing-its-border-with-russia-11-21-2026-W7VOKSGPSNCPHDGM2FEKJNHCFE/",
+   "status": 200
+  },
+  {
+   "url": "https://www.lexpress.eu/subscribe/",
+   "status": 200
+  },
+  {
+   "url": "https://www.lexpress.eu/no-such-page-xyz/",
+   "status": 404
+  }
+ ],
+ "polish_site_fragments": [
+  {
+   "text": "Zapisz się do L'Express",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/europa/dzialania-wrogie-pociagaja-za-soba-konsekwencje-dlaczego-estonia-zamyka-granice-z-rosja-11-21-2026-K2UJ3SHSG5DD7PUIMXBNJZV6DA/",
+   "status": 200
+  },
+  {
+   "text": "Odblokuj nieograniczony dostęp do wszystkich naszych artykułów",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/europa/dzialania-wrogie-pociagaja-za-soba-konsekwencje-dlaczego-estonia-zamyka-granice-z-rosja-11-21-2026-K2UJ3SHSG5DD7PUIMXBNJZV6DA/",
+   "status": 200
+  },
+  {
+   "text": "L'Express Polska",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/subskrypcja/",
+   "status": 200
+  },
+  {
+   "text": "Twój klucz do informacji",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/subskrypcja/",
+   "status": 200,
+   "note": "le site tutoie le lecteur"
+  },
+  {
+   "text": "Błąd",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
+   "status": 404
+  },
+  {
+   "text": "Mogła zostać przeniesiona lub już nie istnieje.",
+   "origin": "relevé",
+   "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
+   "status": 404
+  }
+ ],
+ "labels": {
+  "pl": {
+   "title": {
+    "text": "Artykuł w prezencie – L'Express Polska",
+    "origin": "traduit",
+    "note": "nom du site « L'Express Polska » relevé"
+   },
+   "description": {
+    "text": "Otrzymujesz w prezencie artykuł L'Express. Miłej lektury.",
+    "origin": "traduit"
+   },
+   "giftedBy": {
+    "text": "Artykuł w prezencie od",
+    "origin": "traduit"
+   },
+   "subscribe": {
+    "text": "Subskrypcja",
+    "origin": "relevé",
+    "url": "https://pl.lexpress.eu/",
+    "status": 200
+   },
+   "by": {
+    "text": "Autor:",
+    "origin": "relevé",
+    "url": "https://pl.lexpress.eu/europa/dzialania-wrogie-pociagaja-za-soba-konsekwencje-dlaczego-estonia-zamyka-granice-z-rosja-11-21-2026-K2UJ3SHSG5DD7PUIMXBNJZV6DA/",
+    "status": 200
+   },
+   "published": {
+    "text": "Opublikowano",
+    "origin": "traduit",
+    "note": "le site affiche la date seule (16.11.2026 09:45), sans mot d'introduction"
+   },
+   "continueReading": {
+    "text": "Czytaj dalej na pl.lexpress.eu",
+    "origin": "traduit"
+   },
+   "gifted": {
+    "text": "Ten artykuł otrzymujesz w prezencie. Zapisz się do L'Express i odblokuj nieograniczony dostęp do wszystkich naszych artykułów.",
+    "origin": "traduit",
+    "note": "seconde phrase assemblée à partir de deux libellés relevés"
+   },
+   "expired": {
+    "text": "Ten link wygasł.",
+    "origin": "traduit"
+   },
+   "withdrawn": {
+    "text": "Ten artykuł nie jest już dostępny.",
+    "origin": "traduit"
+   },
+   "unknown": {
+    "text": "Ten link nie istnieje.",
+    "origin": "traduit"
+   },
+   "limited": {
+    "text": "Artykuły w prezencie są dostępne przez ograniczony czas.",
+    "origin": "traduit"
+   },
+   "unavailable": {
+    "text": "Nie można teraz wyświetlić tego artykułu.",
+    "origin": "traduit"
+   },
+   "technical": {
+    "text": "Problem techniczny uniemożliwia załadowanie artykułu. Spróbuj ponownie za chwilę.",
+    "origin": "traduit"
+   },
+   "retry": {
+    "text": "Spróbuj ponownie",
+    "origin": "traduit"
+   },
+   "loading": {
+    "text": "Ładowanie…",
+    "origin": "traduit"
+   },
+   "loadingArticle": {
+    "text": "Ładowanie artykułu",
+    "origin": "traduit"
+   },
+   "notFound": {
+    "text": "Nie znaleziono strony",
+    "origin": "traduit"
+   },
+   "invalidLink": {
+    "text": "Link, z którego korzystasz, jest nieprawidłowy.",
+    "origin": "traduit"
+   },
+   "pageError": {
+    "text": "Nie udało się załadować tej strony",
+    "origin": "traduit"
+   },
+   "pageErrorDetail": {
+    "text": "Wystąpił problem techniczny. Spróbuj ponownie lub przejdź na stronę główną.",
+    "origin": "traduit"
+   },
+   "home": {
+    "text": "Przejdź na stronę główną",
+    "origin": "relevé",
+    "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
+    "status": 404,
+    "note": "page d'erreur du site"
+   },
+   "homeLabel": {
+    "text": "Przejdź na stronę główną",
+    "origin": "relevé",
+    "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
+    "status": 404,
+    "note": "page d'erreur du site"
+   }
+  },
+  "fr": {
+   "title": {
+    "text": "Article offert — L'Express",
+    "origin": "lecteur"
+   },
+   "description": {
+    "text": "Un article de L'Express vous a été offert. Bonne lecture.",
+    "origin": "lecteur"
+   },
+   "giftedBy": {
+    "text": "Article offert par",
+    "origin": "lecteur"
+   },
+   "subscribe": {
+    "text": "S'abonner",
+    "origin": "relevé",
+    "url": "https://fr.lexpress.eu/",
+    "status": 200
+   },
+   "by": {
+    "text": "Par",
+    "origin": "relevé",
+    "url": "https://fr.lexpress.eu/europe/russie-comment-des-filiales-europeennes-confisquees-par-le-kremlin-financent-leffort-de-guerre-11-21-2026-EO5ZUTHGTRB6DMFVAUMW3KLCWU/",
+    "status": 200
+   },
+   "published": {
+    "text": "Publié le",
+    "origin": "lecteur",
+    "note": "le site affiche la date seule (16.11.2026 09:45)"
+   },
+   "continueReading": {
+    "text": "Lire la suite sur fr.lexpress.eu",
+    "origin": "lecteur",
+    "note": "texte du lecteur France, domaine remplacé"
+   },
+   "gifted": {
+    "text": "Cet article vous a été offert. Pour lire L'Express sans limite, abonnez-vous.",
+    "origin": "lecteur",
+    "note": "décision d'Ophélie du 16/11 : phrase de la France conservée"
+   },
+   "expired": {
+    "text": "Ce lien a expiré.",
+    "origin": "lecteur"
+   },
+   "withdrawn": {
+    "text": "Cet article n'est plus disponible.",
+    "origin": "lecteur"
+   },
+   "unknown": {
+    "text": "Ce lien n'existe pas.",
+    "origin": "lecteur"
+   },
+   "limited": {
+    "text": "Les articles offerts sont accessibles pendant une durée limitée.",
+    "origin": "lecteur"
+   },
+   "unavailable": {
+    "text": "Impossible d'afficher cet article pour le moment.",
+    "origin": "lecteur"
+   },
+   "technical": {
+    "text": "Un problème technique nous empêche de charger l'article. Veuillez réessayer dans quelques instants.",
+    "origin": "lecteur"
+   },
+   "retry": {
+    "text": "Réessayer",
+    "origin": "lecteur"
+   },
+   "loading": {
+    "text": "Chargement…",
+    "origin": "lecteur"
+   },
+   "loadingArticle": {
+    "text": "Chargement de l'article",
+    "origin": "lecteur"
+   },
+   "notFound": {
+    "text": "Page introuvable",
+    "origin": "lecteur"
+   },
+   "invalidLink": {
+    "text": "Le lien que vous avez suivi n'est pas valide.",
+    "origin": "lecteur"
+   },
+   "pageError": {
+    "text": "Cette page n'a pas pu être chargée",
+    "origin": "lecteur"
+   },
+   "pageErrorDetail": {
+    "text": "Un problème technique est survenu. Vous pouvez réessayer ou revenir à l'accueil.",
+    "origin": "lecteur"
+   },
+   "home": {
+    "text": "Retour à l'accueil",
+    "origin": "lecteur",
+    "note": "fr.lexpress.eu n'a pas de page d'erreur habillée (« Not Found » brut)"
+   },
+   "homeLabel": {
+    "text": "Retour à l'accueil",
+    "origin": "lecteur",
+    "note": "fr.lexpress.eu n'a pas de page d'erreur habillée (« Not Found » brut)"
+   }
+  },
+  "en": {
+   "title": {
+    "text": "Gift article — L'Express Europe",
+    "origin": "lecteur"
+   },
+   "description": {
+    "text": "An article from L'Express Europe has been shared with you. Enjoy your read.",
+    "origin": "lecteur"
+   },
+   "giftedBy": {
+    "text": "Article shared by",
+    "origin": "lecteur"
+   },
+   "subscribe": {
+    "text": "Subscribe",
+    "origin": "relevé",
+    "url": "https://www.lexpress.eu/",
+    "status": 200,
+    "note": "décision d'Ophélie du 16/11 ; sans langue connue, l'ancien libellé « Subscribe to L'Express Europe » reste"
+   },
+   "by": {
+    "text": "By",
+    "origin": "relevé",
+    "url": "https://www.lexpress.eu/europe/hostile-actions-have-consequences-why-estonia-is-closing-its-border-with-russia-11-21-2026-W7VOKSGPSNCPHDGM2FEKJNHCFE/",
+    "status": 200
+   },
+   "published": {
+    "text": "Published on",
+    "origin": "lecteur"
+   },
+   "continueReading": {
+    "text": "Continue reading on lexpress.eu",
+    "origin": "lecteur"
+   },
+   "gifted": {
+    "text": "This article has been shared with you. Subscribe for unlimited access to L'Express Europe.",
+    "origin": "lecteur"
+   },
+   "expired": {
+    "text": "This link has expired.",
+    "origin": "lecteur"
+   },
+   "withdrawn": {
+    "text": "This article is no longer available.",
+    "origin": "lecteur"
+   },
+   "unknown": {
+    "text": "This link does not exist.",
+    "origin": "lecteur"
+   },
+   "limited": {
+    "text": "Gift articles are available for a limited time.",
+    "origin": "lecteur"
+   },
+   "unavailable": {
+    "text": "This article cannot be displayed right now.",
+    "origin": "lecteur"
+   },
+   "technical": {
+    "text": "A technical problem is preventing us from loading this article. Please try again in a few moments.",
+    "origin": "lecteur"
+   },
+   "retry": {
+    "text": "Try again",
+    "origin": "lecteur"
+   },
+   "loading": {
+    "text": "Loading…",
+    "origin": "lecteur"
+   },
+   "loadingArticle": {
+    "text": "Loading article",
+    "origin": "lecteur"
+   },
+   "notFound": {
+    "text": "Page not found",
+    "origin": "lecteur"
+   },
+   "invalidLink": {
+    "text": "The link you followed is not valid.",
+    "origin": "lecteur"
+   },
+   "pageError": {
+    "text": "This page didn't load",
+    "origin": "lecteur"
+   },
+   "pageErrorDetail": {
+    "text": "Something went wrong on our end. You can try again or head back home.",
+    "origin": "lecteur"
+   },
+   "home": {
+    "text": "Go home",
+    "origin": "lecteur"
+   },
+   "homeLabel": {
+    "text": "Go to the homepage",
+    "origin": "relevé",
+    "url": "https://www.lexpress.eu/no-such-page-xyz/",
+    "status": 404,
+    "note": "page d'erreur du site"
+   }
+  }
+ }
+}

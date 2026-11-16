@@ -34,6 +34,27 @@ for(const link of links){
  const cross=(await q("SELECT * FROM get_gift_article_for_edition_v2('FR',$1)",[link.token]))[0];
  assert.equal(cross.status,'unknown');assert.equal(cross.language,null);
 }
+// Écran de refus traduit : un lien expiré ou retiré rend la langue de son article, rien d'autre.
+await q('SELECT cache_articles($1::jsonb)',[JSON.stringify([{edition:'EUR',language:'pl',arc_id:'REFUS_PL',canonical_url:'https://pl.lexpress.eu/refus',title:'Refus',body:'Corps secret'}])]);
+const refus=(await q("SELECT * FROM create_gift_links_for_edition('EUR',ARRAY['REFUS_PL'])"))[0];
+const v2=async(edition,token,role)=>{if(role)await db.exec(`SET ROLE ${role}`);try{return (await q('SELECT * FROM get_gift_article_for_edition_v2($1,$2)',[edition,token]))[0];}finally{await db.exec('RESET ROLE');}};
+const onlyLanguage=(r,status)=>assert.deepEqual(r,{status,canonical_url:null,title:null,standfirst:null,image_url:null,body:null,section:null,author:null,published_at:null,language:'pl'},status);
+await q("UPDATE gift_links SET expires_at=now()-interval '1 day' WHERE token=$1",[refus.token]);
+onlyLanguage(await v2('EUR',refus.token,'anon'),'expired');
+assert.deepEqual([(await v2('FR',refus.token,'anon')).status,(await v2('FR',refus.token,'anon')).language],['unknown',null],'aucune langue pour une autre édition');
+await q("UPDATE gift_links SET expires_at=now()+interval '1 day',withdrawn_at=now() WHERE token=$1",[refus.token]);
+onlyLanguage(await v2('EUR',refus.token,'anon'),'withdrawn');
+const lectures=async()=>(await q('SELECT count(*)::int AS n FROM gift_link_opens'))[0].n;const avant=await lectures();
+const absent=await v2('EUR','f'.repeat(32),'anon');
+assert.equal(await lectures(),avant,'un jeton inconnu ne compte aucune lecture : contrôle PROD sans effet');
+assert.deepEqual([absent.status,absent.language],['unknown',null],'aucune langue pour un jeton inconnu');
+// Disponibilité : les adresses pl. et fr. sont acceptées et rattachées à l'édition Europe.
+await q("INSERT INTO api_clients(name,token_sha256) VALUES ('statut',$1)",['a'.repeat(64)]);
+const statut=urls=>q('SELECT * FROM gift_link_status_v107($1,$2)',['a'.repeat(64),urls]);
+const etats=await statut([`https://pl.lexpress.eu/europa/a-${pl}/`,`https://fr.lexpress.eu/europe/a-${fr}/`,'https://www.lexpress.eu/a-AAAAAAAAAAAAAAAAAAAAAAAAAA','https://www.lexpress.fr/a-'+pl]);
+assert.deepEqual(etats.map(e=>[new URL(e.url).hostname,e.reason]).sort(),[['fr.lexpress.eu','available'],['pl.lexpress.eu','available'],['www.lexpress.eu','missing'],['www.lexpress.fr','missing']]);
+assert.ok(etats.filter(e=>e.available).every(e=>e.link.startsWith('https://articles.lexpress.eu/a/')));
+for(const refused of ['https://pl.lexpress.fr/a-'+pl,'https://de.lexpress.eu/a-'+pl,'https://pl.lexpress.eu.evil.test/a-'+pl,'http://pl.lexpress.eu/a-'+pl,'https://evil.test/pl.lexpress.eu/a-'+pl])await assert.rejects(statut([refused]),/URLs invalides/,refused);
 await q('SELECT cache_articles($1::jsonb)',[JSON.stringify([{edition:'EUR',arc_id:pl,title:'Actualisé',body:null}])]);
 assert.equal((await q('SELECT language FROM articles WHERE edition=$1 AND arc_id=$2',['EUR',pl]))[0].language,'pl');
 await q("INSERT INTO articles(edition,arc_id,canonical_url,title) VALUES ('EUR','DEFAULT_EUR','https://www.lexpress.eu/default','default'),('FR','DEFAULT_FR','https://www.lexpress.fr/default','default')");
@@ -79,5 +100,7 @@ assert.equal((await q('SELECT language FROM articles WHERE arc_id=$1',[pl]))[0].
 await db.exec(readFileSync('gift-links/supabase/rollback/017-article-language.sql','utf8'));
 assert.equal((await q("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='articles' AND column_name='language'"))[0].n,0);
 assert.equal((await q("SELECT count(*)::int AS n FROM gift_links WHERE token=$1",[old.token]))[0].n,1);
+await assert.rejects(statut([`https://pl.lexpress.eu/a-${pl}`]),/URLs invalides/,'retour arrière : disponibilité 015 restaurée');
+assert.equal((await statut(['https://www.lexpress.eu/a-OLDOLDOLDOLDOLDOLDOLDOLDOL'])).length,1);
 await db.close();
 console.log('Langues SQL : défauts EUR/FR, langue immuable et liée à la canonique, migration rejouable après retour arrière, identifiants PL/FR et liens distincts, lecture v2, refus croisés et rollback vérifiés.');

@@ -1,4 +1,4 @@
-import { canonicalLanguage, type ArticleLanguage } from "./articleLanguage.ts";
+import { canonicalLanguage, isArticleLanguage, type ArticleLanguage } from "./articleLanguage.ts";
 import type { ReaderContext } from "./edition.ts";
 import { readerDatabase } from "./deployment.ts";
 
@@ -18,6 +18,8 @@ export type GiftArticle = {
 export type GiftArticleRefusal = {
   /** "unavailable" = technical failure (network, HTTP error, malformed response), never an editorial status. */
   error: "expired" | "withdrawn" | "unknown" | "unavailable";
+  /** Lien expiré ou retiré seulement : langue de son article, pour traduire l'écran de refus. */
+  language?: ArticleLanguage;
 };
 
 export type GiftArticleResult = GiftArticle | GiftArticleRefusal;
@@ -47,7 +49,11 @@ export async function getGiftArticle(token: string, context: ReaderContext, sear
     const rows: unknown = await res.json();
     const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
     if (!row || typeof row !== "object") return { error: "unavailable" };
-    if (["expired", "withdrawn", "unknown"].includes(row.status)) return { error: row.status };
+    if (row.status === "unknown") return { error: "unknown" };
+    if (row.status === "expired" || row.status === "withdrawn") {
+      // Seule une langue de la liste fermée est retenue ; elle ne choisit que des textes et cibles fixes.
+      return context.edition === "EUR" && isArticleLanguage(row.language) ? { error: row.status, language: row.language } : { error: row.status };
+    }
     if ((row.status === "ok" || row.status === "preview") && typeof row.title === "string" && typeof row.canonical_url === "string") {
       const expected = canonicalLanguage(context.edition, row.canonical_url);
       if (!expected || row.language !== expected) return { error: "unavailable" };
