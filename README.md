@@ -374,8 +374,8 @@ Service existant :
 | `SUPABASE_SERVICE_ROLE_KEY` | Accès serveur à la base ; jamais dans le frontend |
 | `ARC_BASE` | URL de l’API Arc, par exemple `https://api.lexpress.arcpublishing.com` |
 | `ARC_TOKEN` | Jeton de lecture Arc, côté serveur |
-| `ARC_SITE` | Site Arc, `lexpress` par défaut |
-| `GIFT_LINK_BASE` | Origine des URLs rendues, `https://articles.lexpress.fr` par défaut |
+| Site Arc | Déduit de l’hôte par `editions.mjs` ; `ARC_SITE` n’est plus utilisé |
+| Origine de lecture | Lue dans `gift_link_origins` par la RPC ; `GIFT_LINK_BASE` n’est plus utilisé |
 
 `.env.example` inventorie ces variables ; la fonction lit les variables du runtime Supabase, pas un fichier local automatiquement. La page Lovable reçoit uniquement l’URL Supabase et la clé publique du projet — celle de rôle `anon`, faite pour être publiée.
 
@@ -597,7 +597,7 @@ Créer ensuite au moins un jeton de service, sans quoi l’API est installée ma
 
 Configurer les variables serveur, exécuter les tests et générer le bundle. Déployer ce bundle comme fonction `create-gift-links` avec le mécanisme Supabase retenu par l’équipe. Ce dépôt ne contient pas encore de script de déploiement ni de configuration de passerelle versionnée : vérifier notamment que la passerelle laisse atteindre le contrôle `x-gift-service-token`, puis qu’un appel sans secret est refusé. Il ne faut pas présenter cette extraction comme une installation en une commande.
 
-Brancher et publier la page Lovable conformément à [son contrat](docs/frontend.md). Pour un autre environnement, adapter l’origine de lecture via `GIFT_LINK_BASE`, la connexion Supabase du frontend et les paramètres du bouton d’abonnement.
+Brancher et publier la page Lovable conformément à [son contrat](docs/frontend.md). Pour un autre environnement, adapter l’origine de lecture dans la table `gift_link_origins`, la connexion Supabase du frontend et les paramètres du bouton d’abonnement.
 
 Après déploiement, vérifier séparément les droits publics, une création avec du contenu réel, les cinq états de lecture et une panne réseau avec réessai. Les tests locaux ne valident ni la configuration distante ni le frontend publié. Pour les tests externes, utiliser un environnement isolé, des articles fictifs et des envois simulés.
 
@@ -653,3 +653,15 @@ WHERE token = '<token>' AND withdrawn_at IS NULL;
 ## Provenance
 
 Extraction locale préparée le 5 octobre 2026 à partir du projet L’Express, puis réalignée le 8 octobre 2026 sur le commit `6f9516d` (« un jeton par service, et chaque lien sait qui l’a demandé »). Les sources du backend et les tests ont été copiés sans modification fonctionnelle. Les scripts restent à la racine afin de conserver les chemins déjà testés. Les workflows et données de l’agent WhatsApp ne sont pas inclus.
+
+## Éditions Europe
+
+Les hôtes `lexpress.eu`/`www.lexpress.eu` utilisent Arc `lexpress-europe` (anglais),
+`pl.lexpress.eu` utilise `lexpress-europe-pl` (polonais), `fr.lexpress.eu` utilise
+`lexpress-europe-fr` (français). Les trois sont stockés sous EUR et lus sur
+`articles.lexpress.eu`. France reste FR, Arc `lexpress`, lecture `articles.lexpress.fr`.
+Les migrations 014/015 réintègrent le schéma Europe déjà en PROD ; ne pas les
+réappliquer en PROD pour ce correctif. `validate-europe-schema.mjs` reconstruit le
+schéma local et compare les contrats utilisés aux définitions PROD observées.
+Avant toute publication, traiter aussi le filtre et les langues du lecteur externe :
+voir [diagnostic et runbook](docs/implementation/europe-language-hosts-20261116.md).

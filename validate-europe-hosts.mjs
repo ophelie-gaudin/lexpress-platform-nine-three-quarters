@@ -70,3 +70,20 @@ for (const host of ['pl.lexpress.eu','fr.lexpress.eu','www.lexpress.eu','www.lex
   assert.equal(rpcCalls.find(c=>c.name==='create_gift_links_for_edition').args.p_edition, edition);
 }
 console.log('Bundle : cache, création par édition, domaine de lecture et corps intégral vérifiés (simulés).');
+
+// Même identifiant Arc publié sur plusieurs sites Europe : refus avant mise en cache.
+const ambiguous = await chargerArticle(arcIdDepuisUrl(example), {arcBase:'https://arc.invalid',arcToken:'fake',fetch:async()=>new Response(JSON.stringify({_id:id,websites:{'lexpress-europe':{},'lexpress-europe-pl':{}},headlines:{basic:'Ambigu'},content_elements:[{type:'text',content:'Corps ambigu'}]}))});
+assert.match(ambiguous.erreur,/plusieurs sites Europe/);
+// L'alias sans www est normalisé vers son origine publique sans suivre le :443 du site.
+let fallbackUrl;
+await chargerArticle(arcIdDepuisUrl(`https://lexpress.eu/article-${id}`), {fetch:async url=>{fallbackUrl=url;return new Response('<meta property="og:title" content="Fixture">');}});
+assert.equal(new URL(fallbackUrl).hostname,'www.lexpress.eu');
+let redirects = 0;
+const relative = await chargerArticle(arcIdDepuisUrl(example), {fetch:async()=>++redirects===1?new Response(null,{status:302,headers:{location:'/relative'}}):new Response('<meta property="og:title" content="Fixture">')});
+assert.equal(relative.source,'page-publique');
+assert.equal(redirects,2);
+let endless = 0;
+const loop = await chargerArticle(arcIdDepuisUrl(example), {fetch:async()=>{endless++;return new Response(null,{status:302,headers:{location:'/loop'}});}});
+assert.ok(loop.erreur);
+assert.equal(endless,5);
+console.log('Europe : ambiguïté multisite refusée, alias public et limites des redirections vérifiés.');

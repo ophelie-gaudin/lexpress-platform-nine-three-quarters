@@ -1,0 +1,15 @@
+--- a/src/lib/giftArticle.ts
++++ b/src/lib/giftArticle.ts
+@@ -48,8 +48,10 @@
+     if (["expired", "withdrawn", "unknown"].includes(row.status)) return { error: row.status };
+     if ((row.status === "ok" || row.status === "preview") && typeof row.title === "string" && typeof row.canonical_url === "string") {
+       const url = new URL(row.canonical_url);
+-      const expected = context.edition === "EUR" ? "lexpress.eu" : "lexpress.fr";
+-      if (url.protocol !== "https:" || ![expected, `www.${expected}`].includes(url.hostname) || url.username || url.password || url.port) return { error: "unavailable" };
++      const allowed = context.edition === "EUR"
++        ? ["lexpress.eu", "www.lexpress.eu", "pl.lexpress.eu", "fr.lexpress.eu"]
++        : ["lexpress.fr", "www.lexpress.fr"];
++      if (url.protocol !== "https:" || !allowed.includes(url.hostname) || url.username || url.password || url.port) return { error: "unavailable" };
+       return row as GiftArticle;
+     }
+     return { error: "unavailable" };

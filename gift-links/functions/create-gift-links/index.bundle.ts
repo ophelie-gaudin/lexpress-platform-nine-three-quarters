@@ -171,6 +171,7 @@ async function chargerArticle(article, conf = {}) {
       if (r.ok) {
         const doc = await r.json();
         const valid = doc._id === article.arcId && doc.websites?.[site];
+        if (valid && SITES.filter(s => s.edition === 'EUR' && doc.websites?.[s.arcSite]).length > 1) return { erreur: 'article publié sur plusieurs sites Europe : langue ambiguë' };
         const contenu = valid ? depuisArc(doc, article.canonicalUrl, edition) : null;
         if (contenu) return { ...contenu, source: 'arc' };
       }
@@ -178,7 +179,7 @@ async function chargerArticle(article, conf = {}) {
     } catch { /* idem : le repli ci-dessous */ }
   }
 
-  let target = article.canonicalUrl;
+  let target = new URL(new URL(article.canonicalUrl).pathname, siteConfig.publicOrigin).href;
   let r;
   for (let redirects = 0; redirects <= 4; redirects++) {
     if (siteDepuisUrl(target) !== siteConfig) return { erreur: 'redirection hors domaine ou édition' };
