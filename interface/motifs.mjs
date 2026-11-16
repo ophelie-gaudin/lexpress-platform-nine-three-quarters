@@ -20,7 +20,7 @@ export const TRADUCTIONS = [
   [/^aucun identifiant Arc dans l/,
     "Cette adresse n'est pas celle d'un article : c'est une page de rubrique, l'accueil, ou une adresse tronquée. Ouvrez l'article et recopiez l'adresse complète."],
   [/^domaine inattendu/,
-    "Cette adresse n'est pas sur lexpress.fr. Le service n'offre que des articles de L'Express."],
+    "Ce domaine n'est pas pris en charge. Utilisez lexpress.fr, www.lexpress.fr, lexpress.eu, www.lexpress.eu, pl.lexpress.eu ou fr.lexpress.eu."],
   [/^protocole refusé/,
     "Adresse en « http » ou d'une autre forme inhabituelle. Recopiez l'adresse depuis la barre du navigateur, elle commence par « https:// »."],
   [/^port refusé/,

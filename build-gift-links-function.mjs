@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 export const SOURCES = [
+  'gift-links/functions/_shared/editions.mjs',
   'gift-links/functions/_shared/apercu.mjs',
   'gift-links/functions/_shared/arc-id.mjs',
   'gift-links/functions/_shared/arc.mjs',

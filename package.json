@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node build-gift-links-function.mjs",
-    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs && node validate-interface.mjs",
+    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs && node validate-interface.mjs && node validate-europe-hosts.mjs",
     "interface": "node interface/serveur-local.mjs"
   },
   "devDependencies": {

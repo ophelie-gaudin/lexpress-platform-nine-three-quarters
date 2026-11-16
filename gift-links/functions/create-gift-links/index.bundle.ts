@@ -1,7 +1,30 @@
 // FICHIER ENGENDRÉ — ne pas modifier à la main.
 // Régénérer : node build-gift-links-function.mjs
-// Sources : gift-links/functions/_shared/apercu.mjs, gift-links/functions/_shared/arc-id.mjs, gift-links/functions/_shared/arc.mjs, gift-links/functions/_shared/corps.mjs, gift-links/functions/create-gift-links/index.ts
+// Sources : gift-links/functions/_shared/editions.mjs, gift-links/functions/_shared/apercu.mjs, gift-links/functions/_shared/arc-id.mjs, gift-links/functions/_shared/arc.mjs, gift-links/functions/_shared/corps.mjs, gift-links/functions/create-gift-links/index.ts
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+// Édition de stockage FR/EUR distincte de la langue et du site Arc.
+// Vérifié par GET des pages publiques le 16 novembre 2026 (Fusion.arcSite et html lang).
+const SITES = Object.freeze([
+  Object.freeze({ edition: 'FR', language: 'fr', arcSite: 'lexpress', publicOrigin: 'https://www.lexpress.fr', readerOrigin: 'https://articles.lexpress.fr', hosts: Object.freeze(['lexpress.fr', 'www.lexpress.fr']) }),
+  Object.freeze({ edition: 'EUR', language: 'en', arcSite: 'lexpress-europe', publicOrigin: 'https://www.lexpress.eu', readerOrigin: 'https://articles.lexpress.eu', hosts: Object.freeze(['lexpress.eu', 'www.lexpress.eu']) }),
+  Object.freeze({ edition: 'EUR', language: 'pl', arcSite: 'lexpress-europe-pl', publicOrigin: 'https://pl.lexpress.eu', readerOrigin: 'https://articles.lexpress.eu', hosts: Object.freeze(['pl.lexpress.eu']) }),
+  Object.freeze({ edition: 'EUR', language: 'fr', arcSite: 'lexpress-europe-fr', publicOrigin: 'https://fr.lexpress.eu', readerOrigin: 'https://articles.lexpress.eu', hosts: Object.freeze(['fr.lexpress.eu']) }),
+]);
+const EDITIONS = Object.freeze({ FR: SITES[0], EUR: SITES[1] });
+function siteDepuisUrl(value) {
+  if (typeof value !== 'string') return null;
+  // URL normalise :443 en port vide. Examiner l'autorité brute avant cette normalisation.
+  const authority = /^https:\/\/([^/?#]+)/i.exec(value.trim())?.[1];
+  if (!authority || /[:@\\]/.test(authority)) return null;
+  let url;
+  try { url = new URL(value); } catch { return null; }
+  if (url.protocol !== 'https:' || url.port || url.username || url.password) return null;
+  return SITES.find(site => site.hosts.includes(url.hostname.toLowerCase())) ?? null;
+}
+function editionDepuisUrl(value) {
+  return siteDepuisUrl(value)?.edition ?? null;
+}
 
 // Ce qu'on peut lire SANS Arc.
 //
@@ -76,8 +99,8 @@ const ANCIEN_FORMAT = /_\d+\.html?$/i;
  * Rend { arcId } ou { erreur } — jamais null silencieux : un appelant qui fournit une URL d'un autre
  * format doit l'apprendre, pas recevoir deux liens au lieu de trois.
  */
-/** Les deux seuls hôtes dont le serveur accepte d'aller chercher une page. */
-const HOTES = new Set(['www.lexpress.fr', 'lexpress.fr']);
+/** Liste explicite des hôtes dont le serveur accepte d'aller chercher une page. */
+const HOTES = new Set(SITES.flatMap(e => e.hosts));
 
 function arcIdDepuisUrl(url) {
   if (typeof url !== 'string' || url.trim() === '') return { erreur: 'url vide' };
@@ -91,9 +114,10 @@ function arcIdDepuisUrl(url) {
   // RELEVÉ PAR UNE REVUE ADVERSE (8 oct. 2026). Le filtre acceptait tout sous-domaine, tout port et
   // tout protocole : `http://interne.lexpress.fr:8443/…` passait, et faisait appeler une machine
   // interne depuis le runtime. Deux hôtes, https, aucun port.
+  if (u.username || u.password) return { erreur: 'identifiants URL refusés' };
   if (u.protocol !== 'https:') return { erreur: `protocole refusé : ${u.protocol}` };
   if (u.port !== '') return { erreur: `port refusé : ${u.port}` };
-  if (!HOTES.has(u.hostname.toLowerCase())) return { erreur: `domaine inattendu : ${u.hostname}` };
+  if (!siteDepuisUrl(url)) return { erreur: `domaine inattendu : ${u.hostname}` };
 
   // L'ancien format ne porte pas d'identifiant Arc. Ces articles sont déjà écartés par la règle des
   // 30 jours, mais un appelant qui en fournirait un doit recevoir un refus explicite, pas un silence.
@@ -103,7 +127,7 @@ function arcIdDepuisUrl(url) {
 
   const m = u.pathname.replace(/\/+$/, '').match(ARC_ID);
   if (!m) return { erreur: `aucun identifiant Arc dans l’URL : ${u.pathname}` };
-  return { arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
+  return { edition: editionDepuisUrl(u.href), arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
 }
 
 /** Sépare le bon grain de l'ivraie sans rien perdre : les deux listes sont rendues. */
@@ -111,7 +135,7 @@ function trierUrls(urls) {
   const retenus = [], rejets = [];
   for (const url of Array.isArray(urls) ? urls : []) {
     const r = arcIdDepuisUrl(url);
-    if (r.arcId) retenus.push({ url, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
+    if (r.arcId) retenus.push({ url, edition: r.edition, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
     else rejets.push({ url, erreur: r.erreur });
   }
   return { retenus, rejets };
@@ -134,32 +158,46 @@ const UA = 'LExpress-GiftLinks/1 (+contenu offert WhatsApp)';
  */
 async function chargerArticle(article, conf = {}) {
   const f = conf.fetch ?? globalThis.fetch;
+  const edition = article.edition ?? editionDepuisUrl(article.canonicalUrl);
+  if (!EDITIONS[edition] || editionDepuisUrl(article.canonicalUrl) !== edition) return { erreur: 'édition invalide' };
+  const siteConfig = siteDepuisUrl(article.canonicalUrl);
+  const site = siteConfig.arcSite;
 
   if (conf.arcBase && conf.arcToken) {
     try {
       const url = `${conf.arcBase.replace(/\/+$/, '')}/content/v4/?_id=${encodeURIComponent(article.arcId)}`
-        + `&website=${encodeURIComponent(conf.arcSite ?? 'lexpress')}`;
+        + `&website=${encodeURIComponent(site)}`;
       const r = await f(url, { headers: { Authorization: `Bearer ${conf.arcToken}`, 'User-Agent': UA } });
       if (r.ok) {
         const doc = await r.json();
-        const contenu = depuisArc(doc, article.canonicalUrl);
+        const valid = doc._id === article.arcId && doc.websites?.[site];
+        const contenu = valid ? depuisArc(doc, article.canonicalUrl, edition) : null;
         if (contenu) return { ...contenu, source: 'arc' };
       }
       // Arc répond mal : on ne s'arrête pas, on retombe sur l'aperçu. Mais on dit d'où vient le contenu.
     } catch { /* idem : le repli ci-dessous */ }
   }
 
-  const r = await f(article.canonicalUrl, { headers: { 'User-Agent': UA } });
-  if (!r || !r.ok) return { erreur: `page injoignable (${r ? r.status : 'sans réponse'})` };
-  // UNE REDIRECTION PEUT SORTIR DU DOMAINE. L'URL d'entrée est filtrée, pas sa destination finale :
-  // une page de lexpress.fr qui renverrait ailleurs ferait lire au serveur ce qu'il n'a pas accepté
-  // d'aller chercher. On regarde où l'on a atterri, pas seulement où l'on allait.
-  if (typeof r.url === 'string' && r.url !== '') {
-    let hote;
-    try { hote = new URL(r.url).hostname.toLowerCase(); } catch { hote = null; }
-    if (hote && !HOTES.has(hote)) return { erreur: `redirection hors domaine : ${hote}` };
+  let target = article.canonicalUrl;
+  let r;
+  for (let redirects = 0; redirects <= 4; redirects++) {
+    if (siteDepuisUrl(target) !== siteConfig) return { erreur: 'redirection hors domaine ou édition' };
+    r = await f(target, { redirect: 'manual', headers: { 'User-Agent': UA } });
+    if ([301, 302, 303, 307, 308].includes(r?.status)) {
+      const location = r.headers.get('location');
+      if (!location) return { erreur: 'redirection sans destination' };
+      const absolute = location.trim().startsWith('//') ? 'https:' + location.trim() : location.trim();
+      if (/^https?:\/\//i.test(absolute) && siteDepuisUrl(absolute) !== siteConfig) return { erreur: 'redirection hors domaine ou édition' };
+      try { target = new URL(location, target).href; } catch { return { erreur: 'redirection invalide' }; }
+      continue;
+    }
+    break;
   }
-  const apercu = apercuDepuisHtml(await r.text(), article.canonicalUrl);
+  if (!r?.ok) return { erreur: `page injoignable (${r ? r.status : 'sans réponse'})` };
+  if (r.url && siteDepuisUrl(r.url) !== siteConfig) return { erreur: 'redirection hors domaine ou édition' };
+  const apercu = apercuDepuisHtml(await r.text(), target);
+  // Une balise og:url ne peut déplacer le cache vers une autre édition.
+  if (siteDepuisUrl(apercu.canonical_url) !== siteConfig) apercu.canonical_url = target;
   if (apercu.erreur) return apercu;
   return { ...apercu, source: 'page-publique' };
 }
@@ -171,6 +209,12 @@ async function chargerArticle(article, conf = {}) {
 // lirait comme du journalisme de L'Express. Mieux vaut un article visiblement factice qu'un faux crédible.
 function corpsDeDemonstration(article) {
   const chapeau = (article && article.standfirst) || '';
+  if (article?.edition === 'EUR') return [
+    '⚠️ DEMONSTRATION TEXT — this is not the real article.',
+    'Editorial content is unavailable. This text only tests the page layout.',
+    chapeau, 'First sample paragraph. Do not distribute as editorial content.',
+    'Second sample paragraph to check line spacing.',
+  ].filter(Boolean).join('\n\n');
   return [
     '⚠️ TEXTE DE DÉMONSTRATION — ce n\'est pas l\'article réel.',
     'Le contenu éditorial n\'est pas encore accessible ; ce texte sert uniquement à vérifier la mise en page.',
@@ -229,7 +273,7 @@ function assainir(html) {
     .replace(URL_ACTIVE, '');
 }
 
-function rendreElement(e) {
+function rendreElement(e, edition = 'FR') {
   if (!e || typeof e !== 'object') return '';
 
   if (e.type === 'text') return typeof e.content === 'string' ? assainir(e.content).trim() : '';
@@ -251,7 +295,7 @@ function rendreElement(e) {
     if (!/^https:\/\//.test(url)) return '';
     const legende = [e.caption, e.subtitle, e.credits_caption_display]
       .find((x) => typeof x === 'string' && x.trim() !== '') ?? '';
-    const alt = sansBalises(legende) || 'Illustration de l\'article';
+    const alt = sansBalises(legende) || (edition === 'EUR' ? 'Article illustration' : 'Illustration de l\'article');
     return '<figure><img src="' + echapper(url) + '" alt="' + echapper(alt) + '" loading="lazy">'
       + (legende ? '<figcaption>' + assainir(legende) + '</figcaption>' : '') + '</figure>';
   }
@@ -283,24 +327,34 @@ function sansSubstance(html) {
 }
 
 /** Lecture d'un document Arc. Le corps est la concaténation des éléments de texte de content_elements. */
-function depuisArc(doc, repliUrl) {
+function depuisArc(doc, repliUrl, edition = 'FR') {
   if (!doc || typeof doc !== 'object') return null;
   const titre = doc.headlines?.basic ?? doc.headline?.basic ?? null;
   if (!titre) return null;
   const corps = Array.isArray(doc.content_elements)
-    ? doc.content_elements.map(rendreElement).filter((h) => h !== '').join('\n\n').trim()
+    ? doc.content_elements.map(e => rendreElement(e, edition)).filter((h) => h !== '').join('\n\n').trim()
     : '';
   return {
     title: titre,
     standfirst: doc.subheadlines?.basic ?? doc.description?.basic ?? null,
     image_url: doc.promo_items?.basic?.url ?? doc.promo_items?.lead_art?.url ?? null,
-    canonical_url: doc.canonical_url ? new URL(doc.canonical_url, 'https://www.lexpress.fr').href : repliUrl,
+    canonical_url: canonicalArc(doc, repliUrl, edition),
     section: doc.taxonomy?.primary_section?.name ?? doc.taxonomy?.sections?.[0]?.name ?? null,
     author: (Array.isArray(doc.credits?.by) ? doc.credits.by : [])
       .map((x) => x?.name).filter((x) => typeof x === 'string' && x.trim() !== '').join(', ') || null,
     published_at: doc.publish_date ?? doc.first_publish_date ?? null,
     body: sansSubstance(corps) ? null : corps,   // corps vide = aperçu, pas « ok » menteur
   };
+}
+
+function canonicalArc(doc, fallback, edition) {
+  const config = siteDepuisUrl(fallback) ?? EDITIONS[edition];
+  const site = config?.arcSite;
+  const value = doc.websites?.[site]?.website_url ?? doc.canonical_url;
+  try {
+    const candidate = new URL(value ?? fallback, config?.publicOrigin ?? 'https://www.lexpress.fr').href;
+    return siteDepuisUrl(candidate) === config ? candidate : fallback;
+  } catch { return fallback; }
 }
 
 // Ce que le service accepte dans le corps d'une requête, et ce qu'il en refuse.
@@ -499,7 +553,7 @@ Deno.serve(async (req) => {
   }
   const jours = duree.jours as number;
 
-  const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
+  const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN') };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
   // préfère ce refus à un lien qui pointerait sur une page vide.
@@ -521,9 +575,9 @@ Deno.serve(async (req) => {
     // pour que la base refuse de le poser sur un article qu'elle a déjà — ce que cette fonction ne peut
     // pas savoir, puisqu'elle ne voit que le chargement courant.
     const demo = corps.fake_body === true && !c.body;
-    if (demo) c.body = corpsDeDemonstration(c);
+    if (demo) c.body = corpsDeDemonstration({ ...c, edition: a.edition });
     aCacher.push({
-      arc_id: a.arcId,
+      edition: a.edition, arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
@@ -552,31 +606,24 @@ Deno.serve(async (req) => {
     return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
   }
 
-  const { data, error } = await db.rpc('create_gift_links', {
-    p_arc_ids: [...new Set(prets.map((p) => p.arcId as string))],
-    // NI `channel` NI `campaign` (8 oct. 2026). Le lien est COMMUN à tous ses destinataires : lui coller
-    // une campagne attribuait toutes les lectures à la dernière déclarée, y compris les plus anciennes.
-    // L'attribution appartient à l'envoi et voyage dans la query string du lien diffusé —
-    // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — puis se range dans `gift_link_opens`,
-    // une ligne par lecture. Les deux clés restent acceptées dans le corps pour ne pas casser les
-    // appelants en place ; elles ne sont simplement plus transmises.
-    // QUI DEMANDE. Rattache le lien à son service : créé par lui, et prolongé par lui si la date bouge.
-    // NULL pour l'appelant sans jeton nommé — une absence honnête plutôt qu'une attribution devinée.
-    p_client_id: clientId,
-    p_expires_at: Number.isFinite(jours) && jours > 0
-      ? new Date(Date.now() + jours * 86400000).toISOString() : null,
-  });
-  if (error) {
-    journal('error', 'creation_refusee', { client: clientName, arc_ids: [...new Set(prets.map((p) => p.arcId as string))], message: error.message });
-    return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+  const parArc = new Map<string, Record<string, string>>();
+  for (const edition of [...new Set(prets.map(p => p.edition as string))]) {
+    const { data, error } = await db.rpc('create_gift_links_for_edition', {
+      p_edition: edition,
+      p_arc_ids: [...new Set(prets.filter(p => p.edition === edition).map(p => p.arcId as string))],
+      p_client_id: clientId,
+      p_expires_at: new Date(Date.now() + jours * 86400000).toISOString(),
+    });
+    if (error) {
+      journal('error', 'creation_refusee', { client: clientName, edition, message: error.message });
+      return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+    }
+    for (const l of data ?? []) parArc.set(`${edition}:${l.arc_id}`, l);
   }
-
-  const parArc = new Map((data ?? []).map((l: Record<string, string>) => [l.arc_id, l]));
-  const racine = (env('GIFT_LINK_BASE') || 'https://articles.lexpress.fr').replace(/\/+$/, '');
 
   const liens: Array<Record<string, unknown>> = [];
   for (const p of prets) {
-    const l = parArc.get(p.arcId as string);
+    const l = parArc.get(`${p.edition}:${p.arcId}`);
 
     // UN LIEN RETIRÉ N'EST PAS RESSUSCITÉ par un appel d'API : withdrawn_at est une décision éditoriale.
     // Il part dans les refus, avec son motif, plutôt que de rendre un lien qui mènerait à un refus.
@@ -585,8 +632,8 @@ Deno.serve(async (req) => {
       continue;
     }
     liens.push({
-      url: p.url, arc_id: p.arcId, token: l.token,
-      link: `${racine}/a/${l.token}`,
+      url: p.url, edition: p.edition, arc_id: p.arcId, token: l.token,
+      link: l.link,
       expires_at: l.expires_at,
       // L'appelant SAIT ce qu'il envoie : un article complet, ou seulement son aperçu.
       content: p.body ? 'full' : 'preview',
