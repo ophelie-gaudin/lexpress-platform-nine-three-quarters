@@ -10,9 +10,9 @@ const LOCALES = { en: "en-GB", fr: "fr-FR", pl: "pl-PL" } as const;
 const EUROPE_HOSTS = new Map<string, ArticleLanguage>([["lexpress.eu", "en"], ["www.lexpress.eu", "en"], ["fr.lexpress.eu", "fr"], ["pl.lexpress.eu", "pl"]]);
 
 export const EUROPE_ACTIONS = {
-  en: { label: "Subscribe", home: "https://www.lexpress.eu/", homeLabel: "Go to the homepage", subscription: "https://www.lexpress.eu/subscribe/" },
-  fr: { label: "S'abonner", home: "https://fr.lexpress.eu/", homeLabel: "Retour à l'accueil", subscription: "https://fr.lexpress.eu/abonnement/" },
-  pl: { label: "Subskrypcja", home: "https://pl.lexpress.eu/", homeLabel: "Przejdź na stronę główną", subscription: "https://pl.lexpress.eu/subskrypcja/" },
+  en: { label: "Subscribe", subscription: "https://www.lexpress.eu/subscribe/" },
+  fr: { label: "S'abonner", subscription: "https://fr.lexpress.eu/abonnement/" },
+  pl: { label: "Subskrypcja", subscription: "https://pl.lexpress.eu/subskrypcja/" },
 } as const;
 
 // Polonais : mots fixes de la page de lecture, traduits une fois. Les articles, eux, viennent déjà traduits.
@@ -45,7 +45,7 @@ export function formatArticleDate(iso: string | null | undefined, edition: Editi
   return new Intl.DateTimeFormat(edition === "FR" ? "fr-FR" : LOCALES[language], { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
 }
 export function articleActions(edition: Edition, language: ArticleLanguage) {
-  if (edition === "FR") return { label: "S'abonner à L'Express", home: "https://www.lexpress.fr/", homeLabel: "Retour à l'accueil", subscription: "https://abonnements-digitaux.lexpress.fr/offres" };
+  if (edition === "FR") return { label: "S'abonner à L'Express", subscription: "https://abonnements-digitaux.lexpress.fr/offres" };
   return EUROPE_ACTIONS[language];
 }
 export function canonicalLanguage(edition: Edition, value: string): ArticleLanguage | null {

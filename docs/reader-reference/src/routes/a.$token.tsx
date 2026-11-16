@@ -1,4 +1,4 @@
-import { articleActions, formatArticleDate, readerCopy, type ArticleLanguage } from "@/lib/articleLanguage";
+import { formatArticleDate, readerCopy, type ArticleLanguage } from "@/lib/articleLanguage";
 import { useReader } from "@/lib/useReader";
 import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -70,7 +70,6 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
   const { edition } = useReader();
   // Habillage dans la langue de l'article : en, fr (fr.lexpress.eu) ou pl. Le lecteur France ne change pas.
   const t = readerCopy(edition, article.language);
-  const actions = articleActions(edition, article.language);
   const date = formatArticleDate(article.published_at, edition, article.language);
   const body = article.status === "ok" ? (article.body ?? "").trim() : "";
   const hasBody = body.length > 0;
@@ -135,7 +134,6 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
             {t.gifted}
           </p>
           <SubscribeButton search={search} language={article.language} />
-          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{actions.homeLabel}</a>}
         </div>
       </div>
     </article>

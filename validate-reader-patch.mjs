@@ -74,8 +74,8 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   const copyKeys=Object.keys(load('src/lib/edition.ts').copy.EUR);
   assert.deepEqual(Object.keys(labels.labels).sort(),['en','fr','pl']);
   for(const [language,entries] of Object.entries(labels.labels)){
-    const shown={...table.readerCopy('EUR',language),subscribe:table.articleActions('EUR',language).label,homeLabel:table.articleActions('EUR',language).homeLabel};
-    assert.deepEqual(Object.keys(entries).sort(),[...copyKeys,'homeLabel'].sort(),`clés ${language}`);
+    const shown={...table.readerCopy('EUR',language),subscribe:table.articleActions('EUR',language).label};
+    assert.deepEqual(Object.keys(entries).sort(),[...copyKeys].sort(),`clés ${language}`);
     for(const [key,entry] of Object.entries(entries)){
       assert.equal(shown[key],entry.text,`${language}.${key}`);
       assert.ok(['relevé','traduit','lecteur'].includes(entry.origin),`${language}.${key} origine`);
@@ -86,11 +86,30 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   assert.equal(table.readerCopy('EUR','pl').subscribe,'Subskrypcja');
   // Le message Lovable porte exactement les mêmes textes que la table : pas de retraduction possible.
   const prompt=readFileSync('docs/implementation/lovable-article-language-prompt.md','utf8');
-  const translated=['title','description','giftedBy','subscribe','by','published','continueReading','gifted','homeLabel','expired','withdrawn','limited'];
+  const translated=['title','description','giftedBy','subscribe','by','published','continueReading','gifted','expired','withdrawn','limited'];
   for(const [language,entries] of Object.entries(labels.labels))for(const key of translated){const entry=entries[key];assert.ok(prompt.includes(`| ${entry.text} |`)||prompt.includes(`| ${entry.text}\n`),`prompt Lovable : ${language}.${key}`);}
   // Les écrans sans langue connue ne sont pas dans le message : rien à traduire, rien à contredire.
   for(const key of ['retry','technical','notFound','pageError'])assert.ok(!prompt.includes(labels.labels.pl[key].text),`prompt sans ${key} polonais`);
-  for(const actions of Object.values(table.EUROPE_ACTIONS))assert.ok(prompt.includes(actions.subscription)&&prompt.includes(actions.home));
+  // Recette du 16/11 : plus aucun lien d'accueil, ni dans la table, ni dans le message Lovable.
+  for(const actions of Object.values(table.EUROPE_ACTIONS)){assert.deepEqual(Object.keys(actions).sort(),['label','subscription']);assert.ok(prompt.includes(actions.subscription));}
+  assert.deepEqual(Object.keys(table.articleActions('FR','fr')).sort(),['label','subscription']);
+  for(const removed of ['Go to the homepage',"Retour à l'accueil",'Przejdź na stronę główną','| Accueil |'])assert.ok(!prompt.includes(removed),`prompt Lovable sans lien d'accueil : ${removed}`);
+  assert.ok(!/https:\/\/(www|fr|pl)\.lexpress\.eu\/(?![A-Za-z0-9])/.test(prompt),'prompt Lovable sans adresse d’accueil');
+  // Le mot « accueil » n'apparaît que pour interdire le lien ; le bouton de la page d'erreur (clé home) reste.
+  for(const line of prompt.split('\n').filter(l=>/accueil/i.test(l)))assert.ok(/[Aa]ucun lien (vers l’|d’)accueil/.test(line),`prompt Lovable, ligne sur l'accueil : ${line}`);
+  assert.ok(prompt.includes('Ne touche pas au bouton de la page d’erreur (clé `home`)'));
+  // Recette du 16/11 : l'en-tête suit la langue de l'article, écrans « expiré » et « retiré » compris.
+  const flat=prompt.replace(/\s+/g,' ');
+  for(const rule of ['- `giftedBy` (en-tête) : dans la langue de l’article dès que la RPC l’a rendue, sur la page de l’article comme sur les écrans « expiré » et « retiré »','affiche « Artykuł w prezencie od », pas « Article shared by »','Sans langue connue (chargement, panne technique, lien inconnu) : texte actuel du contexte.','- Lien expiré ou retiré avec une langue : en-tête, titre du refus,'])assert.ok(flat.includes(rule),`règle d'en-tête : ${rule}`);
+  // Chaque cas de la recette porte sa propre preuve : découpage par cas, pas de recherche à travers l'étape.
+  const step=/\n3\. ([^]*?)\n4\. /.exec(prompt)?.[1]??'';
+  const cases=step.split(/\n   (?=Cas polonais retiré|Lien inconnu)/).map(c=>c.replace(/\s+/g,' '));
+  assert.equal(cases.length,3,'recette : expiré, retiré, inconnu');
+  for(const [index,status,title] of [[0,'expiré',labels.labels.pl.expired.text],[1,'retiré',labels.labels.pl.withdrawn.text]]){
+    assert.ok(cases[index].startsWith(`Cas polonais ${status}`),`recette ${status}`);
+    for(const text of [`« ${title} »`,'en-tête « Artykuł w prezencie od »','aucun lien d’accueil'])assert.ok(cases[index].includes(text),`recette polonais ${status} : ${text}`);
+  }
+  assert.ok(cases[2].startsWith('Lien inconnu')&&cases[2].includes('en-tête anglais'),'recette lien inconnu');
   assert.ok(!Object.values(labels.labels.en).some(e=>e.origin==='traduit')&&!Object.values(labels.labels.fr).some(e=>e.origin==='traduit'),'seul le polonais est traduit');
   // Le lecteur France ignore la langue : mêmes textes qu'avant, quel que soit l'argument.
   for(const language of [undefined,'en','fr','pl'])assert.equal(table.readerCopy('FR',language),load('src/lib/edition.ts').copy.FR);
@@ -112,7 +131,8 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     assert.equal(proof.subscription.label,label);assert.equal(proof.subscription.status,200);
     assert.equal(target.origin+target.pathname,proof.subscription.url);
     const L=labels.labels[language];
-    assert.ok(links.some(l=>l.props.href===proof.url&&l.props.children.includes(L.homeLabel.text)),`accueil ${language}`);
+    assert.deepEqual(links.map(l=>l.props.children),[[label]],`sous la phrase d'offre, le bouton seul, aucun lien d'accueil ${language}`);
+    assert.ok(!links.some(l=>l.props.href===proof.url));
     assert.ok(shownText(rendered).includes(L.gifted.text),`phrase d'offre ${language}`);
     // lang ne couvre que le contenu de l'article.
     assert.equal(rendered.props.lang,undefined);
@@ -123,6 +143,7 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     const preview=route.ArticleView({article:{...row,status:'preview',body:null,author:'A',published_at:'2026-11-16T10:00:00Z'},search:''});
     const source=anchors(preview).find(l=>l.props.href===row.canonical_url);
     assert.deepEqual(source.props.children,[L.continueReading.text],`aperçu ${language}`);
+    assert.deepEqual(anchors(preview).map(l=>l.props.children),[[L.continueReading.text],[label]],`aperçu sans lien d'accueil ${language}`);
     const shown=shownText(preview);
     const expected={en:['By A','Published on 16 November 2026'],fr:['Par A','Publié le 16 novembre 2026'],pl:['Autor: A','Opublikowano 16 listopada 2026']}[language];
     for(const text of expected)assert.ok(shown.includes(text),`${text} : ${shown}`);
@@ -135,6 +156,7 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
       assert.deepEqual({...refusal},{error:status,language});
       const view=route.RefusalView({error:refusal.error,language:refusal.language,search:'?s=recipient&redirect=https://evil.test'});
       assert.ok(shownText(view).includes(L[status].text)&&shownText(view).includes(L.limited.text),`refus ${status} ${language}`);
+      assert.equal(anchors(view).length,1,`refus ${status} ${language} : bouton seul`);
       const refusalButton=anchors(view)[0];assert.deepEqual(refusalButton.props.children,[label]);
       assert.equal(refusalButton.props.href,proof.subscription.url+'?s=recipient');
     }
@@ -167,5 +189,5 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   assert.ok(anchors(france).some(l=>l.props.children.includes("S'abonner à L'Express")&&l.props.href.startsWith('https://abonnements-digitaux.lexpress.fr/offres')),'abonnement France inchangé');
   row={...row,canonical_url:'https://pl.lexpress.eu/a',language:'pl'};
   assert.equal((await api.getGiftArticle('a'.repeat(32),reader)).error,'unavailable');
-  console.log('Lecteur : patch appliqué, RPC v2, vrai rendu EN/FR/PL (boutons, accueil, signature, date, offre, refus traduits), table comparée au relevé, refus sécurité/langue vérifiés (simulés).');
+  console.log('Lecteur : patch appliqué, RPC v2, vrai rendu EN/FR/PL (boutons sans lien d’accueil, signature, date, offre, refus traduits), table comparée au relevé, refus sécurité/langue vérifiés (simulés).');
 } finally {rmSync(dir,{recursive:true,force:true});}
