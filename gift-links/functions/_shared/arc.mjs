@@ -6,7 +6,7 @@
 // Le second chemin reste utile APRÈS la mise en service : si Arc tombe, on sert un aperçu réel plutôt
 // que rien. L'appelant ne voit pas la différence dans la forme de la réponse, seulement dans `body`.
 import { apercuDepuisHtml } from './apercu.mjs';
-import { EDITIONS, editionDepuisUrl, siteDepuisUrl } from './editions.mjs';
+import { SITES, EDITIONS, editionDepuisUrl, siteDepuisUrl } from './editions.mjs';
 
 const UA = 'LExpress-GiftLinks/1 (+contenu offert WhatsApp)';
 
@@ -29,6 +29,7 @@ export async function chargerArticle(article, conf = {}) {
       if (r.ok) {
         const doc = await r.json();
         const valid = doc._id === article.arcId && doc.websites?.[site];
+        if (valid && SITES.filter(s => s.edition === 'EUR' && doc.websites?.[s.arcSite]).length > 1) return { erreur: 'article publié sur plusieurs sites Europe : langue ambiguë' };
         const contenu = valid ? depuisArc(doc, article.canonicalUrl, edition) : null;
         if (contenu) return { ...contenu, source: 'arc' };
       }
@@ -36,7 +37,7 @@ export async function chargerArticle(article, conf = {}) {
     } catch { /* idem : le repli ci-dessous */ }
   }
 
-  let target = article.canonicalUrl;
+  let target = new URL(new URL(article.canonicalUrl).pathname, siteConfig.publicOrigin).href;
   let r;
   for (let redirects = 0; redirects <= 4; redirects++) {
     if (siteDepuisUrl(target) !== siteConfig) return { erreur: 'redirection hors domaine ou édition' };

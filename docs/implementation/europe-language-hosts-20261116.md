@@ -116,3 +116,41 @@ Supabase crée une nouvelle version (v26 attendue si le déploiement était v25)
 le comportement v24. Ne pas rétrograder vers le bundle France seul de main.
 Retour arrière interface : republier son déploiement précédent par le circuit existant,
 après accord. Aucune restauration SQL, aucun token supprimé. Refaire la fumée.
+
+## Revue adverse et suites
+
+Claude Opus 5.5, premier passage : CHANGES ; aucune faille SSRF trouvée.
+S2 corrigé : migrations historiques 014/015 réintégrées, contrats de trois fonctions
+relevés via SELECT pg_get_functiondef en PROD, puis comparés au schéma reconstruit
+avec PGlite. Le test exécute réellement cache_articles et create_gift_links_for_edition,
+contrôle les colonnes et les origines FR/EUR. Les 170 assertions historiques seules
+ne couvraient pas Europe ; le test Europe SQL s'y ajoute désormais.
+S4 corrigé : README actualisé, ARC_SITE et GIFT_LINK_BASE obsolètes indiqués.
+S3 : risque multisite plausible, non observé. Le chargement Arc refuse maintenant
+un document présent sur plusieurs sites EUR avant cache ; test ajouté.
+N1 corrigé : alias sans www normalisé vers publicOrigin pour l'aperçu.
+N4 : redirection relative et borne de cinq appels couvertes.
+N2/N5 : démonstration et serveur local restent historiques ; pas une traduction
+polonaise, ne pas les employer comme preuve de langue du lecteur publié.
+N3 : les créations multiéditions ne sont pas transactionnelles entre éditions ;
+un échec tardif peut suivre une création FR réussie (comportement v24 conservé).
+
+S1 : la dépendance lecteur est confirmée et la publication reste interdite sans
+accord. Ajouter un drapeau désactivant les langues est une proposition optionnelle
+du reviewer, non retenue : cela n'implémenterait pas l'acceptation demandée et
+ajouterait une configuration aux deux runtimes. Aucun merge autorisé ici.
+La correction externe est rendue concrète par `docs/patches/reader-europe-hosts.patch`.
+Elle étend seulement la liste blanche du lecteur à PL/FR ; aucun déploiement.
+`validate-reader-patch.mjs` applique ce patch à une copie du source retrouvé et
+exécute son vrai getGiftArticle en simulation pour EN/PL/FR et les refus croisés.
+Commande préparatoire, dans le projet lecteur et après contrôle de sa révision :
+`git apply --check /chemin/Platform/docs/patches/reader-europe-hosts.patch`, puis
+`git apply /chemin/Platform/docs/patches/reader-europe-hosts.patch`.
+Le parent doit faire revoir/publier ce lecteur dans son circuit existant après
+accord ; la présente PR ne publie ni n'édite ce projet externe.
+
+Origines relues en PROD par SELECT (réponse API 201) :
+EUR https://articles.lexpress.eu ; FR https://articles.lexpress.fr.
+Avant déploiement, vérifier aussi `pg_get_function_result` de
+create_gift_links_for_edition : arc_id text, token text, expires_at timestamptz,
+state text, link text. Ne pas appliquer les migrations historiques en PROD.
