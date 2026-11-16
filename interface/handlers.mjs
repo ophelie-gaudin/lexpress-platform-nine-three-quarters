@@ -262,7 +262,7 @@ export function handlerCreer({ env, fetch = globalThis.fetch, maintenant = () =>
     }));
     if (retenus.length === 0) {
       return json({
-        panne: "Aucune des adresses fournies n'est celle d'un article de lexpress.fr qui puisse être offert.",
+        panne: "Aucune des adresses fournies n'est celle d'un article de L'Express qui puisse être offert.",
         liens: [], refuses: refusesLocaux,
         resume: { demandes: adresses.length, obtenus: 0, apercus: 0, refuses: refusesLocaux.length },
       }, 400);

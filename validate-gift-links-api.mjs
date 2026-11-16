@@ -123,7 +123,7 @@ const PAGE = `<html><head>
     'C’EST LA PROPRIÉTÉ QUI COMPTE : Arc qui refuse ne laisse PAS le prospect sans rien — on retombe sur l’aperçu réel');
 
   const arcOk = async (u) => String(u).includes('/content/v4/')
-    ? { ok: true, status: 200, json: async () => ({ headlines: { basic: 'T' }, content_elements: [{ type: 'text', content: 'Le corps.' }] }) }
+    ? { ok: true, status: 200, json: async () => ({ _id: article.arcId, websites: { lexpress: { website_url: URL_OK } }, headlines: { basic: 'T' }, content_elements: [{ type: 'text', content: 'Le corps.' }] }) }
     : page();
   const complet = await chargerArticle(article, { arcBase: 'https://api.arc', arcToken: 'x', fetch: arcOk });
   check(complet.source === 'arc' && complet.body === 'Le corps.', 'avec Arc : le corps arrive, et la source le dit');

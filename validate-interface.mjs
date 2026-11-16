@@ -622,3 +622,16 @@ const URL_RETIREE = 'https://www.lexpress.fr/monde/europe/un-article-retire-WDWD
 }
 
 console.log(`interface web (liens offerts) : ${n} vérifications passées.`);
+
+// Europe : le proxy valide les hôtes mais laisse le backend déduire l'édition.
+for (const host of ['www.lexpress.eu', 'pl.lexpress.eu', 'fr.lexpress.eu']) {
+  let forwarded;
+  const url = `https://${host}/article-4DHUZG3CTFFJFLSPBD3XJ2O4TU/`;
+  const handler = handlerCreer({env:ENV, fetch:async (_url, options) => {
+    forwarded = JSON.parse(options.body);
+    return new Response(JSON.stringify({links:[],rejected:[]}));
+  }});
+  const response = await handler(requete('/api/creer',{corps:{adresses:url},cookie:cookieValide()}));
+  check(response.status === 200 && forwarded.urls[0] === url, `proxy transmet ${host}`);
+  check(!Object.hasOwn(forwarded, 'edition'), 'édition déduite du domaine côté backend');
+}

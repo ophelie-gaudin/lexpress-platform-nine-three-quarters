@@ -1,0 +1,35 @@
+[
+  {
+    "host": "www.lexpress.eu",
+    "url": "https://www.lexpress.eu/europe/hostile-actions-have-consequences-why-estonia-is-closing-its-border-with-russia-11-21-2026-W7VOKSGPSNCPHDGM2FEKJNHCFE/",
+    "status": 200,
+    "lang": [
+      "en"
+    ],
+    "arc_site": [
+      "lexpress-europe"
+    ]
+  },
+  {
+    "host": "pl.lexpress.eu",
+    "url": "https://pl.lexpress.eu/europa/dzialania-wrogie-pociagaja-za-soba-konsekwencje-dlaczego-estonia-zamyka-granice-z-rosja-11-21-2026-K2UJ3SHSG5DD7PUIMXBNJZV6DA/",
+    "status": 200,
+    "lang": [
+      "pl"
+    ],
+    "arc_site": [
+      "lexpress-europe-pl"
+    ]
+  },
+  {
+    "host": "fr.lexpress.eu",
+    "url": "https://fr.lexpress.eu/europe/russie-comment-des-filiales-europeennes-confisquees-par-le-kremlin-financent-leffort-de-guerre-11-21-2026-EO5ZUTHGTRB6DMFVAUMW3KLCWU/",
+    "status": 200,
+    "lang": [
+      "fr"
+    ],
+    "arc_site": [
+      "lexpress-europe-fr"
+    ]
+  }
+]

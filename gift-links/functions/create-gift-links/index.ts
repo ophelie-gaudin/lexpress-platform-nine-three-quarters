@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
   }
   const jours = duree.jours as number;
 
-  const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN'), arcSite: env('ARC_SITE') || 'lexpress' };
+  const conf = { arcBase: env('ARC_BASE'), arcToken: env('ARC_TOKEN') };
 
   // Le contenu D'ABORD, les liens ENSUITE : create_gift_links refuse un article absent du cache, et on
   // préfère ce refus à un lien qui pointerait sur une page vide.
@@ -170,9 +170,9 @@ Deno.serve(async (req) => {
     // pour que la base refuse de le poser sur un article qu'elle a déjà — ce que cette fonction ne peut
     // pas savoir, puisqu'elle ne voit que le chargement courant.
     const demo = corps.fake_body === true && !c.body;
-    if (demo) c.body = corpsDeDemonstration(c);
+    if (demo) c.body = corpsDeDemonstration({ ...c, edition: a.edition });
     aCacher.push({
-      arc_id: a.arcId,
+      edition: a.edition, arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
@@ -201,31 +201,24 @@ Deno.serve(async (req) => {
     return json({ error: 'aucun article exploitable', rejected: rejets }, 502);
   }
 
-  const { data, error } = await db.rpc('create_gift_links', {
-    p_arc_ids: [...new Set(prets.map((p) => p.arcId as string))],
-    // NI `channel` NI `campaign` (8 oct. 2026). Le lien est COMMUN à tous ses destinataires : lui coller
-    // une campagne attribuait toutes les lectures à la dernière déclarée, y compris les plus anciennes.
-    // L'attribution appartient à l'envoi et voyage dans la query string du lien diffusé —
-    // `?s=…&at_medium=…&at_campaign=…&at_campaign_group=…` — puis se range dans `gift_link_opens`,
-    // une ligne par lecture. Les deux clés restent acceptées dans le corps pour ne pas casser les
-    // appelants en place ; elles ne sont simplement plus transmises.
-    // QUI DEMANDE. Rattache le lien à son service : créé par lui, et prolongé par lui si la date bouge.
-    // NULL pour l'appelant sans jeton nommé — une absence honnête plutôt qu'une attribution devinée.
-    p_client_id: clientId,
-    p_expires_at: Number.isFinite(jours) && jours > 0
-      ? new Date(Date.now() + jours * 86400000).toISOString() : null,
-  });
-  if (error) {
-    journal('error', 'creation_refusee', { client: clientName, arc_ids: [...new Set(prets.map((p) => p.arcId as string))], message: error.message });
-    return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+  const parArc = new Map<string, Record<string, string>>();
+  for (const edition of [...new Set(prets.map(p => p.edition as string))]) {
+    const { data, error } = await db.rpc('create_gift_links_for_edition', {
+      p_edition: edition,
+      p_arc_ids: [...new Set(prets.filter(p => p.edition === edition).map(p => p.arcId as string))],
+      p_client_id: clientId,
+      p_expires_at: new Date(Date.now() + jours * 86400000).toISOString(),
+    });
+    if (error) {
+      journal('error', 'creation_refusee', { client: clientName, edition, message: error.message });
+      return json({ error: `création refusée : ${error.message}`, rejected: rejets }, 500);
+    }
+    for (const l of data ?? []) parArc.set(`${edition}:${l.arc_id}`, l);
   }
-
-  const parArc = new Map((data ?? []).map((l: Record<string, string>) => [l.arc_id, l]));
-  const racine = (env('GIFT_LINK_BASE') || 'https://articles.lexpress.fr').replace(/\/+$/, '');
 
   const liens: Array<Record<string, unknown>> = [];
   for (const p of prets) {
-    const l = parArc.get(p.arcId as string);
+    const l = parArc.get(`${p.edition}:${p.arcId}`);
 
     // UN LIEN RETIRÉ N'EST PAS RESSUSCITÉ par un appel d'API : withdrawn_at est une décision éditoriale.
     // Il part dans les refus, avec son motif, plutôt que de rendre un lien qui mènerait à un refus.
@@ -234,8 +227,8 @@ Deno.serve(async (req) => {
       continue;
     }
     liens.push({
-      url: p.url, arc_id: p.arcId, token: l.token,
-      link: `${racine}/a/${l.token}`,
+      url: p.url, edition: p.edition, arc_id: p.arcId, token: l.token,
+      link: l.link,
       expires_at: l.expires_at,
       // L'appelant SAIT ce qu'il envoie : un article complet, ou seulement son aperçu.
       content: p.body ? 'full' : 'preview',
