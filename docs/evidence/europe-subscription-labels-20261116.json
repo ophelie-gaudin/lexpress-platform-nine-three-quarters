@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://www.lexpress.eu/",
+    "status": 200,
+    "links": [
+      {
+        "href": "/subscribe/",
+        "title": null,
+        "aria": null,
+        "text": "Subscribe"
+      },
+      {
+        "href": "/subscribe/",
+        "title": null,
+        "aria": null,
+        "text": "Subscribe"
+      }
+    ],
+    "subscription": {
+      "label": "Subscribe",
+      "url": "https://www.lexpress.eu/subscribe/",
+      "status": 200,
+      "final_url": "https://www.lexpress.eu/subscribe/"
+    }
+  },
+  {
+    "url": "https://pl.lexpress.eu/",
+    "status": 200,
+    "links": [
+      {
+        "href": "/subskrypcja/",
+        "title": null,
+        "aria": null,
+        "text": "Subskrypcja"
+      },
+      {
+        "href": "https://pl.lexpress.eu/subskrypcja/ ",
+        "title": null,
+        "aria": null,
+        "text": "Subskrypcja"
+      }
+    ],
+    "subscription": {
+      "label": "Subskrypcja",
+      "url": "https://pl.lexpress.eu/subskrypcja/",
+      "status": 200,
+      "final_url": "https://pl.lexpress.eu/subskrypcja/"
+    }
+  },
+  {
+    "url": "https://fr.lexpress.eu/",
+    "status": 200,
+    "links": [
+      {
+        "href": "/abonnement/",
+        "title": null,
+        "aria": null,
+        "text": "S'abonner"
+      },
+      {
+        "href": " https://fr.lexpress.eu/abonnement/ ",
+        "title": null,
+        "aria": null,
+        "text": "S'abonner"
+      }
+    ],
+    "subscription": {
+      "label": "S'abonner",
+      "url": "https://fr.lexpress.eu/abonnement/",
+      "status": 200,
+      "final_url": "https://fr.lexpress.eu/abonnement/"
+    }
+  }
+]

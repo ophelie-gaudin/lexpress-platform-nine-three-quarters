@@ -40,7 +40,7 @@ export function arcIdDepuisUrl(url) {
 
   const m = u.pathname.replace(/\/+$/, '').match(ARC_ID);
   if (!m) return { erreur: `aucun identifiant Arc dans l’URL : ${u.pathname}` };
-  return { edition: editionDepuisUrl(u.href), arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
+  return { edition: editionDepuisUrl(u.href), language: siteDepuisUrl(url).language, arcId: m[1], canonicalUrl: u.origin + u.pathname.replace(/\/+$/, '') };
 }
 
 /** Sépare le bon grain de l'ivraie sans rien perdre : les deux listes sont rendues. */
@@ -48,7 +48,7 @@ export function trierUrls(urls) {
   const retenus = [], rejets = [];
   for (const url of Array.isArray(urls) ? urls : []) {
     const r = arcIdDepuisUrl(url);
-    if (r.arcId) retenus.push({ url, edition: r.edition, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
+    if (r.arcId) retenus.push({ url, edition: r.edition, language: r.language, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
     else rejets.push({ url, erreur: r.erreur });
   }
   return { retenus, rejets };

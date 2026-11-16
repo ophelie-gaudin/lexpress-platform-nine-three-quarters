@@ -1,15 +1,149 @@
 --- a/src/lib/giftArticle.ts
 +++ b/src/lib/giftArticle.ts
-@@ -48,8 +48,10 @@
+@@ -1,3 +1,4 @@
++import { canonicalLanguage, type ArticleLanguage } from "./articleLanguage.ts";
+ import type { ReaderContext } from "./edition.ts";
+ import { readerDatabase } from "./deployment.ts";
+
+@@ -11,6 +12,7 @@
+   section: string;
+   author?: string | null;
+   published_at: string;
++  language: ArticleLanguage;
+ };
+
+ export type GiftArticleRefusal = {
+@@ -32,9 +34,9 @@
+     p_token: token, p_utm_source: params.get("at_medium"), p_utm_campaign: params.get("at_campaign"),
+     p_referrer: referrer, p_send_id: params.get("at_recipient_id") || params.get("s"), p_campaign_group: params.get("at_campaign_group"),
+   };
+-  // Legacy FR endpoint stays compatible before the production migration.
+-  const rpc = context.edition === "FR" ? "get_gift_article" : "get_gift_article_for_edition";
+-  if (context.edition === "EUR") args["p_edition"] = "EUR";
++  // Déployer la migration additive 017 avant ce lecteur.
++  const rpc = "get_gift_article_for_edition_v2";
++  args["p_edition"] = context.edition;
+   const db = readerDatabase(context);
+   try {
+     const res = await fetch(`${db.url}/rest/v1/rpc/${rpc}`, {
+@@ -47,9 +49,8 @@
+     if (!row || typeof row !== "object") return { error: "unavailable" };
      if (["expired", "withdrawn", "unknown"].includes(row.status)) return { error: row.status };
      if ((row.status === "ok" || row.status === "preview") && typeof row.title === "string" && typeof row.canonical_url === "string") {
-       const url = new URL(row.canonical_url);
+-      const url = new URL(row.canonical_url);
 -      const expected = context.edition === "EUR" ? "lexpress.eu" : "lexpress.fr";
 -      if (url.protocol !== "https:" || ![expected, `www.${expected}`].includes(url.hostname) || url.username || url.password || url.port) return { error: "unavailable" };
-+      const allowed = context.edition === "EUR"
-+        ? ["lexpress.eu", "www.lexpress.eu", "pl.lexpress.eu", "fr.lexpress.eu"]
-+        : ["lexpress.fr", "www.lexpress.fr"];
-+      if (url.protocol !== "https:" || !allowed.includes(url.hostname) || url.username || url.password || url.port) return { error: "unavailable" };
++      const expected = canonicalLanguage(context.edition, row.canonical_url);
++      if (!expected || row.language !== expected) return { error: "unavailable" };
        return row as GiftArticle;
      }
      return { error: "unavailable" };
+--- a/src/lib/subscriptionLink.ts
++++ b/src/lib/subscriptionLink.ts
+@@ -1,3 +1,4 @@
++import { articleActions, type ArticleLanguage } from "./articleLanguage.ts";
+ import { editions, type Edition } from "./edition.ts";
+
+ /**
+@@ -9,9 +10,9 @@
+  * so a parameter repeated in the link keeps a single value. A parameter that is
+  * absent stays absent: no defaults, no fallback, no fabricated tracking.
+  */
+-export function buildSubscriptionUrl(search?: string, edition: Edition = "FR"): string {
++export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage): string {
+   const incoming = new URLSearchParams(search ?? "");
+-  const url = new URL(editions[edition].subscription);
++  const url = new URL(language ? articleActions(edition, language).subscription : editions[edition].subscription);
+
+   for (const [key, value] of incoming) {
+     if (value && (key.startsWith("at_") || key === "s")) {
+--- a/src/components/SubscribeButton.tsx
++++ b/src/components/SubscribeButton.tsx
+@@ -1,15 +1,16 @@
++import { articleActions, type ArticleLanguage } from "@/lib/articleLanguage";
+ import { copy } from "@/lib/edition";
+ import { useReader } from "@/lib/useReader";
+ import { buildSubscriptionUrl } from "@/lib/subscriptionLink";
+
+-export function SubscribeButton({ search }: { search: string }) {
++export function SubscribeButton({ search, language }: { search: string; language?: ArticleLanguage }) {
+   const { edition } = useReader();
+   return (
+     <a
+-      href={buildSubscriptionUrl(search, edition)}
++      href={buildSubscriptionUrl(search, edition, language)}
+       className="inline-flex w-full items-center justify-center rounded-sm bg-express px-6 py-4 text-center text-base font-semibold tracking-wide text-express-foreground transition-opacity hover:opacity-90"
+     >
+-      {copy[edition].subscribe}
++      {language ? articleActions(edition, language).label : copy[edition].subscribe}
+     </a>
+   );
+ }
+--- a/src/routes/a.$token.tsx
++++ b/src/routes/a.$token.tsx
+@@ -1,3 +1,4 @@
++import { articleActions } from "@/lib/articleLanguage";
+ import { copy, formatPublicationDate } from "@/lib/edition";
+ import { useReader } from "@/lib/useReader";
+ import { createFileRoute, useRouterState } from "@tanstack/react-router";
+@@ -76,13 +77,14 @@
+
+ function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
+   const { edition } = useReader();
+-  const t = copy[edition];
++  const t = copy[edition === "EUR" && article.language === "fr" ? "FR" : edition];
++  const actions = articleActions(edition, article.language);
+   const date = formatPublicationDate(article.published_at, edition);
+   const body = article.status === "ok" ? (article.body ?? "").trim() : "";
+   const hasBody = body.length > 0;
+
+   return (
+-    <article>
++    <article lang={article.language}>
+       <div className="measure px-5">
+         {/* Full width; never stretched. Very tall photos are center-cropped to a
+             comfortable height instead of letterboxed. */}
+@@ -131,7 +133,7 @@
+               href={article.canonical_url}
+               className="inline-flex w-full items-center justify-center rounded-sm border border-express px-6 py-4 text-base font-semibold text-express transition-colors hover:bg-express hover:text-express-foreground"
+             >
+-              {t.continueReading}
++              {new URL(article.canonical_url).hostname}
+             </a>
+           </div>
+         )}
+@@ -140,7 +142,8 @@
+           <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+             {t.gifted}
+           </p>
+-          <SubscribeButton search={search} />
++          <SubscribeButton search={search} language={article.language} />
++          <a href={actions.home} className="mt-4 inline-block underline">{new URL(actions.home).hostname}</a>
+         </div>
+       </div>
+     </article>
+--- /dev/null
++++ b/src/lib/articleLanguage.ts
+@@ -0,0 +1,22 @@
++// Textes et cibles relevés par GET public, 16 novembre 2026.
++export type ArticleLanguage = "en" | "fr" | "pl";
++export const EUROPE_ACTIONS = {
++  en: { label: "Subscribe", home: "https://www.lexpress.eu/", subscription: "https://www.lexpress.eu/subscribe/" },
++  fr: { label: "S'abonner", home: "https://fr.lexpress.eu/", subscription: "https://fr.lexpress.eu/abonnement/" },
++  pl: { label: "Subskrypcja", home: "https://pl.lexpress.eu/", subscription: "https://pl.lexpress.eu/subskrypcja/" },
++} as const;
++export function articleActions(edition: "FR" | "EUR", language: ArticleLanguage) {
++  if (edition === "FR") return { label: "S'abonner à L'Express", home: "https://www.lexpress.fr/", subscription: "https://abonnements-digitaux.lexpress.fr/offres" };
++  return EUROPE_ACTIONS[language];
++}
++export function canonicalLanguage(edition: "FR" | "EUR", value: string): ArticleLanguage | null {
++  try {
++    const authority = /^https:\/\/([^/?#]+)/i.exec(value)?.[1];
++    if (!authority || /[:@\\]/.test(authority)) return null;
++    const url = new URL(value);
++    if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
++    if (edition === "FR") return ["lexpress.fr", "www.lexpress.fr"].includes(url.hostname) ? "fr" : null;
++    const hosts: Record<string, ArticleLanguage> = { "lexpress.eu": "en", "www.lexpress.eu": "en", "fr.lexpress.eu": "fr", "pl.lexpress.eu": "pl" };
++    return Object.hasOwn(hosts, url.hostname) ? hosts[url.hostname] : null;
++  } catch { return null; }
++}

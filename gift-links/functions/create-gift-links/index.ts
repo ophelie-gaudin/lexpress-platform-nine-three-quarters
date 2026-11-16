@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
     const demo = corps.fake_body === true && !c.body;
     if (demo) c.body = corpsDeDemonstration({ ...c, edition: a.edition });
     aCacher.push({
-      edition: a.edition, arc_id: a.arcId,
+      edition: a.edition, language: a.language, arc_id: a.arcId,
       canonical_url: c.canonical_url ?? a.canonicalUrl,
       title: c.title, standfirst: c.standfirst, image_url: c.image_url,
       body: c.body, section: c.section, author: c.author, published_at: c.published_at,
@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
       continue;
     }
     liens.push({
-      url: p.url, edition: p.edition, arc_id: p.arcId, token: l.token,
+      url: p.url, edition: p.edition, language: p.language, arc_id: p.arcId, token: l.token,
       link: l.link,
       expires_at: l.expires_at,
       // L'appelant SAIT ce qu'il envoie : un article complet, ou seulement son aperçu.
