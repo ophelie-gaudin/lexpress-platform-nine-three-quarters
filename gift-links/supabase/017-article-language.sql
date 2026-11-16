@@ -1,27 +1,45 @@
--- Métadonnée du contenu, indépendante de la durée et du jeton d'un lien offert.
+-- Langue d'édition d'origine du contenu, indépendante de la durée et du jeton d'un lien offert.
 -- Additif : les RPC historiques et les tokens existants restent utilisables.
+-- Rejouable, y compris après le retour arrière : la langue se retrouve par l'hôte canonique.
 BEGIN;
+-- Ne pas faire attendre les lectures derrière un verrou : échouer vite, puis rejouer.
+SET LOCAL lock_timeout = '3s';
 ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS language text;
-UPDATE public.articles SET language = CASE WHEN edition = 'EUR' THEN 'en' ELSE 'fr' END WHERE language IS NULL;
+
+-- Une seule règle, partagée par le remplissage, le défaut et la contrainte :
+-- pl.lexpress.eu = pl, fr.lexpress.eu = fr, reste de l'édition Europe = en, France = fr.
+CREATE OR REPLACE FUNCTION public.article_language(p_edition text, p_canonical_url text) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path=pg_catalog AS $language$
+ SELECT CASE
+  WHEN p_edition = 'EUR' AND p_canonical_url ~* '^https://pl\.lexpress\.eu([/?#]|$)' THEN 'pl'
+  WHEN p_edition = 'EUR' AND p_canonical_url ~* '^https://fr\.lexpress\.eu([/?#]|$)' THEN 'fr'
+  WHEN p_edition = 'EUR' THEN 'en'
+  ELSE 'fr'
+ END
+$language$;
+-- Fonction pure, sans lecture de données : exécutable par tous. La contrainte ci-dessous l'évalue
+-- avec les droits du rôle qui écrit ; la restreindre casserait une purge ou une correction manuelle.
+GRANT EXECUTE ON FUNCTION public.article_language(text,text) TO PUBLIC;
+
+UPDATE public.articles SET language = public.article_language(edition, canonical_url)
+ WHERE language IS DISTINCT FROM public.article_language(edition, canonical_url);
 ALTER TABLE public.articles ALTER COLUMN language SET NOT NULL;
-DO $constraint$ BEGIN
- IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.articles'::regclass AND conname='articles_language_check') THEN
-  ALTER TABLE public.articles ADD CONSTRAINT articles_language_check CHECK (
-   (edition='FR' AND language='fr') OR (edition='EUR' AND language IN ('en','fr','pl'))
-  );
- END IF;
-END $constraint$;
--- PostgreSQL ne permet pas un DEFAULT dépendant d'une autre colonne.
--- Le trigger fournit donc le défaut EUR=en / FR=fr aux anciens appelants.
+-- La langue reste liée à l'adresse canonique : l'une ne change pas sans l'autre.
+ALTER TABLE public.articles DROP CONSTRAINT IF EXISTS articles_language_check;
+ALTER TABLE public.articles ADD CONSTRAINT articles_language_check
+ CHECK (language = public.article_language(edition, canonical_url));
+
+-- PostgreSQL ne permet pas un DEFAULT dépendant d'une autre colonne : le trigger fournit
+-- le défaut aux anciens appelants, à l'insertion seulement. Effacer une langue reste une erreur.
 CREATE OR REPLACE FUNCTION public.default_article_language() RETURNS trigger
 LANGUAGE plpgsql SET search_path=public,pg_temp AS $default$
 BEGIN
- IF NEW.language IS NULL THEN NEW.language := CASE WHEN NEW.edition='EUR' THEN 'en' ELSE 'fr' END; END IF;
+ IF NEW.language IS NULL THEN NEW.language := public.article_language(NEW.edition, NEW.canonical_url); END IF;
  RETURN NEW;
 END $default$;
-REVOKE ALL ON FUNCTION public.default_article_language() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.default_article_language() FROM PUBLIC,anon,authenticated;
 DROP TRIGGER IF EXISTS article_language_default ON public.articles;
-CREATE TRIGGER article_language_default BEFORE INSERT OR UPDATE ON public.articles
+CREATE TRIGGER article_language_default BEFORE INSERT ON public.articles
 FOR EACH ROW EXECUTE FUNCTION public.default_article_language();
 
 CREATE OR REPLACE FUNCTION public.cache_articles(p_articles jsonb)
@@ -46,8 +64,17 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('gift-cache:' || e.edition || ':' || e.arc_id, 0))
     FROM entrants e ORDER BY e.edition, e.arc_id;
 
+  -- La langue d'origine d'un article existant ne change pas : un identifiant Arc appartient à un seul
+  -- site. Un ancien appelant sans langue est jugé sur l'hôte de l'adresse canonique qu'il apporte.
+  IF EXISTS (
+    SELECT 1 FROM entrants e JOIN public.articles a ON a.edition = e.edition AND a.arc_id = e.arc_id
+    WHERE COALESCE(e.language, public.article_language(e.edition,
+            COALESCE(NULLIF(btrim(e.canonical_url), ''), a.canonical_url))) <> a.language
+  ) THEN
+    RAISE EXCEPTION 'cache_articles : la langue d''un article existant ne change pas';
+  END IF;
+
   UPDATE public.articles a SET
-    language = COALESCE(e.language, a.language),
     canonical_url = COALESCE(NULLIF(btrim(e.canonical_url), ''), a.canonical_url),
     title         = COALESCE(NULLIF(btrim(e.title), ''),         a.title),
     standfirst    = COALESCE(NULLIF(btrim(e.standfirst), ''),    a.standfirst),

@@ -46,6 +46,8 @@ try {
   const api=load('src/lib/giftArticle.ts');
   const table=load('src/lib/articleLanguage.ts');
   const route=load('src/routes/a.$token.tsx');
+  const evidence=JSON.parse(readFileSync('docs/evidence/europe-subscription-labels-20261116.json','utf8'));
+  const all=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children??[]).flat(Infinity).flatMap(all)];
   const anchors=node=>!node||typeof node!=='object'?[]:[...(node.type==='a'?[node]:[]),...(node.props?.children??[]).flat(Infinity).flatMap(anchors)];
   for(const [language,host,label,path] of [['en','www.lexpress.eu','Subscribe','subscribe'],['fr','fr.lexpress.eu',"S'abonner",'abonnement'],['pl','pl.lexpress.eu','Subskrypcja','subskrypcja']]){
     reader={edition:'EUR',environment:'TEST'};
@@ -54,12 +56,28 @@ try {
     assert.equal(result.language,language);
     assert.ok(rpc.url.endsWith('/get_gift_article_for_edition_v2'));assert.equal(rpc.body.p_edition,'EUR');
     const rendered=route.ArticleView({article:row,search:'?s=recipient&at_campaign=fixture&redirect=https://evil.test'});
-    assert.equal(rendered.props.lang,language);
     const links=anchors(rendered);
     const button=links.find(l=>l.props.children.includes(label));assert.ok(button,label);
     const target=new URL(button.props.href);assert.equal(target.origin,`https://${host}`);assert.equal(target.pathname,`/${path}/`);
     assert.equal(target.searchParams.get('s'),'recipient');assert.equal(target.searchParams.get('redirect'),null);
-    assert.ok(links.some(l=>l.props.href===table.EUROPE_ACTIONS[language].home));
+    // Comparé à la preuve relevée par GET, pas à la table testée elle-même.
+    const proof=evidence.find(e=>new URL(e.url).hostname===host);
+    assert.equal(proof.subscription.label,label);assert.equal(proof.subscription.status,200);
+    assert.equal(target.origin+target.pathname,proof.subscription.url);
+    assert.ok(links.some(l=>l.props.href===proof.url&&l.props.children.includes(host)),`accueil ${language}`);
+    // lang ne couvre que le contenu de l'article, pas l'habillage (anglais pour un article polonais).
+    assert.equal(rendered.props.lang,undefined);
+    const tagged=all(rendered).filter(n=>n.props?.lang);
+    assert.ok(tagged.length>0&&tagged.every(n=>n.props.lang===language));
+    assert.ok(tagged.some(n=>n.type==='h1'));
+    // Aperçu : libellé historique si son domaine est le bon, sinon domaine source ; date selon l'habillage.
+    const preview=route.ArticleView({article:{...row,status:'preview',body:null,author:'A',published_at:'2026-11-16T10:00:00Z'},search:''});
+    const source=anchors(preview).find(l=>l.props.href===row.canonical_url);
+    assert.deepEqual(source.props.children,[language==='en'?'Continue reading on lexpress.eu':host],`aperçu ${language}`);
+    const texts=node=>node==null||typeof node==='boolean'?[]:typeof node!=='object'?[String(node)]:(node.props?.children??[]).flat(Infinity).flatMap(texts);
+    const shown=texts(preview).join(' ').replace(/\s+/g,' ');
+    assert.ok(shown.includes(language==='fr'?'Publié le 16 novembre 2026':'Published on 16 November 2026'),`date ${language} : ${shown}`);
+    assert.ok(!shown.includes('lexpress.fr'),`aucune mention France sur ${language}`);
     row={...row,language:language==='en'?'pl':'en'};
     assert.equal((await api.getGiftArticle('a'.repeat(32),reader)).error,'unavailable');
   }
@@ -69,6 +87,10 @@ try {
   }
   reader={edition:'FR',environment:'TEST'};row={status:'ok',title:'Fixture',canonical_url:'https://www.lexpress.fr/a',language:'fr'};
   assert.equal((await api.getGiftArticle('a'.repeat(32),reader)).language,'fr');
+  const france=route.ArticleView({article:{...row,status:'preview',body:null},search:''});
+  assert.ok(anchors(france).some(l=>l.props.children.includes('Lire la suite sur lexpress.fr')),'aperçu France inchangé');
+  assert.ok(!anchors(france).some(l=>l.props.href==='https://www.lexpress.fr/'),'aucun lien d’accueil ajouté au lecteur France');
+  assert.ok(anchors(france).some(l=>l.props.children.includes("S'abonner à L'Express")&&l.props.href.startsWith('https://abonnements-digitaux.lexpress.fr/offres')),'abonnement France inchangé');
   row={...row,canonical_url:'https://pl.lexpress.eu/a',language:'pl'};
   assert.equal((await api.getGiftArticle('a'.repeat(32),reader)).error,'unavailable');
   console.log('Lecteur : patch appliqué, RPC v2, vrai rendu des boutons EN/FR/PL, accueil, attribution et refus sécurité/langue vérifiés (simulés).');

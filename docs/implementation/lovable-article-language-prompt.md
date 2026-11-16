@@ -32,14 +32,24 @@ Crée une table de traductions simple, uniquement avec ces libellés relevés pa
 Les trois pages d’abonnement et les accueils ont répondu HTTP 200 le 16/11/2026.
 
 En bas d’un article résolu, utilise sa langue pour le bouton d’abonnement et sa
-cible. Ajoute un lien vers l’accueil de cette édition ; affiche le nom de domaine
+cible. Sur articles.lexpress.eu seulement (pas sur articles.lexpress.fr, qui ne change
+pas), ajoute sous ce bouton un lien vers l’accueil de l’édition ; affiche le nom de domaine
 comme libellé neutre (fr.lexpress.eu, pl.lexpress.eu, www.lexpress.eu), sans inventer
 un « Retour à l’accueil » polonais. En aperçu, conserve le lien canonique vers
-l’article source et utilise également son domaine comme libellé neutre.
+l’article source : libellé existant inchangé pour lexpress.fr (« Lire la suite sur
+lexpress.fr ») et pour l’anglais (« Continue reading on lexpress.eu ») ; pour
+fr.lexpress.eu et pl.lexpress.eu, affiche le domaine source comme libellé neutre.
+Un article de fr.lexpress.eu utilise les textes français existants du lecteur
+(« Par », « Publié le », phrase d’offre) et la date au format fr-FR ; il ne doit
+jamais afficher « lexpress.fr ». Un article polonais garde l’habillage anglais
+existant (textes et date en-GB) tant que les traductions ne sont pas validées.
 Conserve strictement la transmission de s et des paramètres at_* vers l’abonnement,
 sans recopier d’autres paramètres. Un article français de lexpress.fr conserve
 son abonnement France actuel et son domaine de lecture articles.lexpress.fr.
-Pose lang sur l’élément article selon la valeur validée de la RPC.
+Pose l’attribut lang (valeur validée de la RPC) sur le contenu de l’article seulement :
+rubrique, titre, chapô, corps. Pas sur l’habillage, qui peut être dans une autre langue.
+Sur un article anglais, le bouton devient « Subscribe » (libellé de l’en-tête du site) au
+lieu de « Subscribe to L'Express Europe » ; les écrans de refus gardent leur libellé actuel.
 
 Ne traduis pas librement les autres textes polonais : titre « article offert »,
 explications, chargement, expiration, réessai, date et signature sont hors de la

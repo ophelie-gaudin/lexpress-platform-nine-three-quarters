@@ -1,6 +1,9 @@
--- Revenir d’abord au lecteur historique puis à la fonction précédente.
--- Les langues stockées sont perdues ; tokens, corps et expirations sont conservés.
+-- Revenir d’abord à la fonction précédente, puis au lecteur historique (jamais l’inverse :
+-- la fonction crée des liens PL/FR que l’ancien lecteur refuse).
+-- La colonne est supprimée ; tokens, corps, expirations et adresses canoniques sont conservés.
+-- Rejouer 017 retrouve les langues par l'hôte canonique.
 BEGIN;
+SET LOCAL lock_timeout = '3s';
 DROP FUNCTION IF EXISTS public.get_gift_article_for_edition_v2(text,text,text,text,text,text,text);
 CREATE OR REPLACE FUNCTION public.cache_articles(p_articles jsonb)
  RETURNS integer
@@ -58,4 +61,5 @@ END $function$
 DROP TRIGGER IF EXISTS article_language_default ON public.articles;
 DROP FUNCTION IF EXISTS public.default_article_language();
 ALTER TABLE public.articles DROP COLUMN IF EXISTS language;
+DROP FUNCTION IF EXISTS public.article_language(text,text);
 COMMIT;

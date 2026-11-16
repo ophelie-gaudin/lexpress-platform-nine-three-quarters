@@ -674,4 +674,6 @@ distincts ; `get_gift_article_for_edition_v2` ajoute la langue au contrat de lec
 sans changer les RPC historiques. Les origines des liens restent inchangées.
 Le patch lecteur, le prompt Lovable et les retours arrière par étape sont dans
 [la procédure de langue](docs/implementation/article-language-release-20261116.md).
+Ordre de publication : migration, lecteur, fonction, interface ; la langue reste liée à
+l’adresse canonique et ne change pas pour un article existant.
 Ne pas déployer ni fusionner sans accord écrit d’Ophélie.
