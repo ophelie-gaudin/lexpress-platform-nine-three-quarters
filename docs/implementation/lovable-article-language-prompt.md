@@ -28,7 +28,7 @@ Refuse (écran « indisponible ») les autres hôtes, HTTP, tout port explicite 
 les identifiants dans l’URL, et une langue différente de celle de l’hôte source.
 Lien expiré ou retiré : ne retiens la langue que si elle vaut exactement en, fr ou pl ;
 sinon affiche l’écran de refus sans langue. Le lecteur France ignore toujours cette langue.
-Ne prends aucune URL de bouton ou d’accueil depuis la query string, le contenu Arc ou une
+Ne prends aucune URL de bouton depuis la query string, le contenu Arc ou une
 valeur de la RPC : uniquement la table ci-dessous.
 
 ## Table de traductions (édition Europe, articles.lexpress.eu)
@@ -38,7 +38,6 @@ Cibles fixes par langue :
 | | en | fr | pl |
 | --- | --- | --- | --- |
 | Abonnement | https://www.lexpress.eu/subscribe/ | https://fr.lexpress.eu/abonnement/ | https://pl.lexpress.eu/subskrypcja/ |
-| Accueil | https://www.lexpress.eu/ | https://fr.lexpress.eu/ | https://pl.lexpress.eu/ |
 | Format de date | en-GB | fr-FR | pl-PL |
 
 Textes fixes selon la langue de l’article, à recopier caractère pour caractère (ne
@@ -54,13 +53,12 @@ retraduis rien) :
 | published | Published on | Publié le | Opublikowano |
 | continueReading | Continue reading on lexpress.eu | Lire la suite sur fr.lexpress.eu | Czytaj dalej na pl.lexpress.eu |
 | gifted | This article has been shared with you. Subscribe for unlimited access to L'Express Europe. | Cet article vous a été offert. Pour lire L'Express sans limite, abonnez-vous. | Ten artykuł otrzymujesz w prezencie. Zapisz się do L'Express i odblokuj nieograniczony dostęp do wszystkich naszych artykułów. |
-| lien d’accueil sous le bouton | Go to the homepage | Retour à l'accueil | Przejdź na stronę główną |
 | expired | This link has expired. | Ce lien a expiré. | Ten link wygasł. |
 | withdrawn | This article is no longer available. | Cet article n'est plus disponible. | Ten artykuł nie jest już dostępny. |
 | limited | Gift articles are available for a limited time. | Les articles offerts sont accessibles pendant une durée limitée. | Artykuły w prezencie są dostępne przez ograniczony czas. |
 
 La colonne en est le texte actuel du lecteur Europe, sauf le bouton (« Subscribe » au
-lieu de « Subscribe to L'Express Europe ») et le nouveau lien d’accueil. La colonne fr
+lieu de « Subscribe to L'Express Europe »). La colonne fr
 est le texte actuel du lecteur France, sauf le bouton et « Lire la suite sur
 fr.lexpress.eu » : un article de fr.lexpress.eu ne doit jamais afficher « lexpress.fr ».
 La colonne pl s’utilise telle quelle : les articles polonais arrivent déjà traduits,
@@ -76,22 +74,28 @@ les modifie pas.
   langue de l’article : signature (`by` + auteur, donc « Autor: Nom » en polonais), date
   (`published` + date au format de la langue, ex. « Opublikowano 16 listopada 2026 »),
   phrase d’offre, bouton et sa cible, lien « continueReading » de l’aperçu vers l’article
-  source, et sous le bouton un lien vers l’accueil de l’édition avec le libellé de la table.
-- `giftedBy` (en-tête) : dans la langue de l’article une fois celui-ci chargé ; texte
-  actuel avant.
+  source.
+- Sous la phrase d’offre : le bouton d’abonnement seul. Aucun lien vers l’accueil, dans
+  aucune langue et sur aucun écran (article, expiré, retiré). Si le brouillon en contient
+  un, supprime-le, ainsi que ses libellés dans la table de traductions.
+  Ne touche pas au bouton de la page d’erreur (clé `home`) : il reste tel quel.
+- `giftedBy` (en-tête) : dans la langue de l’article dès que la RPC l’a rendue, sur la
+  page de l’article comme sur les écrans « expiré » et « retiré » (un lien polonais expiré
+  affiche « Artykuł w prezencie od », pas « Article shared by »). Sans langue connue
+  (chargement, panne technique, lien inconnu) : texte actuel du contexte.
 - `title` et `description` : mets à jour `document.title` (et la balise meta description)
   dans le navigateur, après la réponse de la RPC, à partir de la réponse déjà reçue.
   N’ajoute aucun appel, ni côté serveur ni côté navigateur : chaque appel compte une
   lecture. Le titre servi dans le HTML initial (aperçus de lien WhatsApp, etc.) reste donc
   celui d’aujourd’hui ; c’est accepté.
-- Lien expiré ou retiré avec une langue : titre du refus, phrase `limited`, bouton et cible
-  dans cette langue.
+- Lien expiré ou retiré avec une langue : en-tête, titre du refus, phrase `limited`,
+  bouton et cible dans cette langue.
 - Sans langue connue (chargement, panne technique, lien inconnu, page introuvable, erreur
   de page) : garde exactement l’affichage actuel du contexte, FR français / EUR anglais,
   avec le bouton actuel « Subscribe to L'Express Europe ». Ne déduis rien du jeton ni du
   navigateur.
 - articles.lexpress.fr ne change pas : mêmes textes, même abonnement
-  (https://abonnements-digitaux.lexpress.fr/offres), pas de lien d’accueil ajouté.
+  (https://abonnements-digitaux.lexpress.fr/offres).
 - Conserve strictement la transmission de `s` et des paramètres `at_*` vers l’abonnement,
   sans recopier d’autres paramètres.
 - Pose l’attribut `lang` (valeur validée de la RPC) sur le contenu de l’article : rubrique,
@@ -113,18 +117,22 @@ L’équipe fournit les liens de recette sur la base TEST (articles en, fr, pl, 
 expiré, un retiré). S’ils manquent ou si la RPC v2 est absente de TEST, arrête-toi et
 demande-les : ne crée rien toi-même.
 
-1. Articles EN/FR/PL lus sur articles.lexpress.eu : boutons et cibles exacts de la table.
+1. Articles EN/FR/PL lus sur articles.lexpress.eu : boutons et cibles exacts de la table,
+   en-tête dans la langue de l’article, aucun lien d’accueil sous le bouton.
 2. Cas polonais : un article de pl.lexpress.eu affiche « Autor: », « Opublikowano » suivi
    d’une date polonaise (mois en toutes lettres), la phrase d’offre polonaise, le bouton
-   « Subskrypcja » vers https://pl.lexpress.eu/subskrypcja/ et le lien « Przejdź na stronę
-   główną » vers https://pl.lexpress.eu/. Aucun mot anglais ni français dans l’habillage.
+   « Subskrypcja » vers https://pl.lexpress.eu/subskrypcja/ et l’en-tête « Artykuł w
+   prezencie od ». Aucun mot anglais ni français dans l’habillage.
    En aperçu : « Czytaj dalej na pl.lexpress.eu » vers l’article source.
-3. Cas polonais expiré puis retiré : « Ten link wygasł. » / « Ten artykuł nie jest już
-   dostępny. », phrase « Artykuły w prezencie są dostępne przez ograniczony czas. »,
-   bouton « Subskrypcja ». Lien inconnu : écran anglais actuel.
+3. Cas polonais expiré : « Ten link wygasł. », phrase « Artykuły w prezencie są dostępne
+   przez ograniczony czas. », bouton « Subskrypcja », en-tête « Artykuł w prezencie od »,
+   aucun lien d’accueil.
+   Cas polonais retiré : « Ten artykuł nie jest już dostępny. », même phrase, même bouton,
+   en-tête « Artykuł w prezencie od », aucun lien d’accueil.
+   Lien inconnu : écran et en-tête anglais actuels.
 4. Article de fr.lexpress.eu : « Par », « Publié le », phrase d’offre France, « S'abonner »
-   vers https://fr.lexpress.eu/abonnement/, « Retour à l'accueil » vers
-   https://fr.lexpress.eu/ ; « lexpress.fr » n’apparaît nulle part.
+   vers https://fr.lexpress.eu/abonnement/, en-tête « Article offert par » ; « lexpress.fr »
+   n’apparaît nulle part.
 5. Pour FR …5IZJUWHEXBCELAV4FGFPXU3LTQ et PL …4DHUZG3CTFFJFLSPBD3XJ2O4TU,
    deux tokens distincts, bons corps, langues et liens conservés.
 6. Anciens articles Europe = en, France = fr ; ancien lien France inchangé à l’écran.

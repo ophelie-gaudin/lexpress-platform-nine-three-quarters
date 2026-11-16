@@ -71,27 +71,38 @@ page d’erreur) ; sinon traduction. Preuve et origine de chaque texte, clé par
 `lecteur` = texte existant du lecteur). Table : `docs/reader-reference/src/lib/articleLanguage.ts`.
 
 Relevés en polonais : « Subskrypcja » (accueil), « Autor: » (article), « Przejdź na stronę
-główną » (page d’erreur du site), et les fragments « Zapisz się do L'Express » et « Odblokuj
+główną » (page d’erreur du site, gardé pour la seule page d’erreur du lecteur), et les fragments « Zapisz się do L'Express » et « Odblokuj
 nieograniczony dostęp do wszystkich naszych artykułów » (menu), assemblés dans la phrase
 d’offre. Le site affiche la date seule (16.11.2026 09:45) : « Opublikowano » est traduit.
 Le ton suit le site (tutoiement, « Twój klucz do informacji »). Tout le reste est traduit.
 
 Français (fr.lexpress.eu) : « Par » et « S'abonner » relevés ; le reste reprend le lecteur
 France, phrase d’offre comprise. Seul écart : « Lire la suite sur fr.lexpress.eu », pour ne
-jamais afficher lexpress.fr. fr.lexpress.eu n’a pas de page d’erreur habillée (« Not Found »
-brut) : « Retour à l'accueil » vient du lecteur France.
+jamais afficher lexpress.fr.
 
-Anglais : textes existants du lecteur, sauf le bouton « Subscribe » (décision du 16/11) et
-le nouveau lien d’accueil « Go to the homepage » (relevé sur la page d’erreur du site).
+Anglais : textes existants du lecteur, sauf le bouton « Subscribe » (décision du 16/11).
+
+Recette visuelle d’Ophélie du 16/11 sur le brouillon Lovable : tout est bon, sauf deux
+points, qu’elle a envoyés elle-même à Lovable et que ce dépôt reprend.
+1. L’en-tête (« Article shared by » / « Article offert par » / « Artykuł w prezencie od »)
+   suit la langue de l’article aussi sur les écrans « expiré » et « retiré ». Il restait en
+   anglais sur un lien polonais expiré ou retiré.
+2. Le lien d’accueil sous le bouton d’abonnement (« Go to the homepage » / « Retour à
+   l'accueil » / « Przejdź na stronę główną ») est supprimé partout : il était jugé bizarre.
+   L’adresse `home` et le libellé `homeLabel` des cibles par langue (`EUROPE_ACTIONS`) sont
+   retirés de la table, du patch et du message Lovable ; `homeLabel` est retiré du relevé
+   JSON. Le bouton de la page d’erreur du lecteur (clé `home` des textes) reste inchangé.
 
 Règles d’affichage : article lu → tout l’habillage dans la langue de l’article, date au
 format de la langue (en-GB, fr-FR, pl-PL). Lien expiré ou retiré → écran de refus et bouton
 dans la langue rendue par la RPC v2. Sans langue connue (chargement, panne, lien inconnu,
 page introuvable) → repli du contexte : anglais sur articles.lexpress.eu, avec l’ancien
-bouton « Subscribe to L'Express Europe ». Le lecteur France ne change pas et n’a pas de lien
-d’accueil ajouté. L’attribut lang couvre le contenu (rubrique, titre, chapô, corps).
+bouton « Subscribe to L'Express Europe ». Le lecteur France ne change pas. Aucun lien
+d’accueil, sur aucun écran. L’attribut lang couvre le contenu (rubrique, titre, chapô, corps).
 Limite : l’en-tête (« Article offert par ») et les pages « introuvable » / « erreur » ne sont
-pas dans le source lecteur retrouvé ; le patch ne les couvre pas, le message Lovable si.
+pas dans le source lecteur retrouvé ; le patch ne les couvre pas, le message Lovable si
+(règle d’en-tête des écrans « expiré » et « retiré » comprise, vérifiée dans le message par
+`validate-reader-patch.mjs`, pas dans un rendu).
 
 ## Lovable
 
@@ -249,7 +260,8 @@ Verdict initial CHANGES, constats traités :
 - 017 rejouée après retour arrière remettait PL/FR en « en » : remplissage par hôte canonique ;
 - langue modifiable et dissociable de la canonique : contrainte + refus dans cache_articles ;
 - même identifiant sous deux langues dans un lot : refus des deux adresses ;
-- lien d’accueil ajouté au lecteur France sans demande : limité à l’édition Europe ;
+- lien d’accueil ajouté au lecteur France sans demande : limité à l’édition Europe (puis
+  supprimé partout après la recette visuelle du 16/11) ;
 - verrou sans délai : lock_timeout 3 s ; langue effacée remplacée en silence : trigger INSERT seul ;
 - lang="pl" englobant l’habillage anglais : lang posé sur le contenu seulement ;
 - tests comparés à la table testée : désormais comparés à la preuve JSON relevée par GET.

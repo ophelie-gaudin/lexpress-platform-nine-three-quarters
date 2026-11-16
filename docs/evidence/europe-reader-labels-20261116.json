@@ -190,13 +190,6 @@
     "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
     "status": 404,
     "note": "page d'erreur du site"
-   },
-   "homeLabel": {
-    "text": "Przejdź na stronę główną",
-    "origin": "relevé",
-    "url": "https://pl.lexpress.eu/nie-ma-takiej-strony-xyz/",
-    "status": 404,
-    "note": "page d'erreur du site"
    }
   },
   "fr": {
@@ -295,11 +288,6 @@
     "text": "Retour à l'accueil",
     "origin": "lecteur",
     "note": "fr.lexpress.eu n'a pas de page d'erreur habillée (« Not Found » brut)"
-   },
-   "homeLabel": {
-    "text": "Retour à l'accueil",
-    "origin": "lecteur",
-    "note": "fr.lexpress.eu n'a pas de page d'erreur habillée (« Not Found » brut)"
    }
   },
   "en": {
@@ -395,13 +383,6 @@
    "home": {
     "text": "Go home",
     "origin": "lecteur"
-   },
-   "homeLabel": {
-    "text": "Go to the homepage",
-    "origin": "relevé",
-    "url": "https://www.lexpress.eu/no-such-page-xyz/",
-    "status": 404,
-    "note": "page d'erreur du site"
    }
   }
  }
