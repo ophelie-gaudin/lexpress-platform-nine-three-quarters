@@ -1,5 +1,4 @@
-import { articleActions } from "@/lib/articleLanguage";
-import { copy, formatPublicationDate } from "@/lib/edition";
+import { articleActions, formatArticleDate, readerCopy, type ArticleLanguage } from "@/lib/articleLanguage";
 import { useReader } from "@/lib/useReader";
 import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +22,6 @@ function GiftArticlePage() {
 
 export function GiftArticleContent({ token }: { token: string }) {
   const reader = useReader();
-  const t = copy[reader.edition];
   const search = useRouterState({ select: (s) => s.location.searchStr });
 
   const { data, isPending, isFetching, refetch } = useQuery({
@@ -54,21 +52,14 @@ export function GiftArticleContent({ token }: { token: string }) {
       <main className="pb-16">
         {isPending || !data ? (
           <ArticleSkeleton />
-        ) : isRefusal(data) && data.error === "unavailable" ? (
-          <UnavailableView onRetry={() => refetch()} retrying={isFetching} />
-        ) : isRefusal(data) ? (
-          <RefusalView
-            message={
-              data.error === "expired"
-                ? t.expired
-                : data.error === "withdrawn"
-                  ? t.withdrawn
-                  : t.unknown
-            }
-            search={search}
-          />
-        ) : (
+        ) : !isRefusal(data) ? (
           <ArticleView article={data} search={search} />
+        ) : data.error === "unavailable" ? (
+          <UnavailableView onRetry={() => refetch()} retrying={isFetching} />
+        ) : data.error === "unknown" ? (
+          <RefusalView error="unknown" search={search} />
+        ) : (
+          <RefusalView error={data.error} language={data.language} search={search} />
         )}
       </main>
     </div>
@@ -77,13 +68,10 @@ export function GiftArticleContent({ token }: { token: string }) {
 
 function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
   const { edition } = useReader();
-  // Textes d'habillage : français pour fr.lexpress.eu, sinon ceux de l'édition (pas de polonais inventé).
-  const copyEdition = edition === "EUR" && article.language === "fr" ? "FR" : edition;
-  const t = copy[copyEdition];
+  // Habillage dans la langue de l'article : en, fr (fr.lexpress.eu) ou pl. Le lecteur France ne change pas.
+  const t = readerCopy(edition, article.language);
   const actions = articleActions(edition, article.language);
-  const date = formatPublicationDate(article.published_at, copyEdition);
-  // Libellé historique conservé là où il nomme le bon domaine ; sinon domaine source, neutre.
-  const sourceLabel = edition === "FR" || article.language === "en" ? t.continueReading : new URL(article.canonical_url).hostname;
+  const date = formatArticleDate(article.published_at, edition, article.language);
   const body = article.status === "ok" ? (article.body ?? "").trim() : "";
   const hasBody = body.length > 0;
 
@@ -137,7 +125,7 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
               href={article.canonical_url}
               className="inline-flex w-full items-center justify-center rounded-sm border border-express px-6 py-4 text-base font-semibold text-express transition-colors hover:bg-express hover:text-express-foreground"
             >
-              {sourceLabel}
+              {t.continueReading}
             </a>
           </div>
         )}
@@ -147,32 +135,32 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
             {t.gifted}
           </p>
           <SubscribeButton search={search} language={article.language} />
-          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{new URL(actions.home).hostname}</a>}
+          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{actions.homeLabel}</a>}
         </div>
       </div>
     </article>
   );
 }
 
-function RefusalView({ message, search }: { message: string; search: string }) {
-  const t = copy[useReader().edition];
+function RefusalView({ error, language, search }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage; search: string }) {
+  const t = readerCopy(useReader().edition, language);
   return (
     <div className="measure px-5 pt-20">
       <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-foreground">
-        {message}
+        {t[error]}
       </h1>
       <p className="mt-3 text-base leading-relaxed text-muted-foreground">
         {t.limited}
       </p>
       <div className="mt-8">
-        <SubscribeButton search={search} />
+        <SubscribeButton search={search} language={language} />
       </div>
     </div>
   );
 }
 
 function UnavailableView({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
-  const t = copy[useReader().edition];
+  const t = readerCopy(useReader().edition);
   return (
     <div className="measure px-5 pt-20">
       <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-foreground">
@@ -196,7 +184,7 @@ function UnavailableView({ onRetry, retrying }: { onRetry: () => void; retrying:
 }
 
 function ArticleSkeleton() {
-  const t = copy[useReader().edition];
+  const t = readerCopy(useReader().edition);
   return (
     <div aria-busy="true" aria-label={t.loadingArticle}>
       <div className="measure px-5">

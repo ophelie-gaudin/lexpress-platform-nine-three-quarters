@@ -21,7 +21,7 @@ export const INVITE_JETON =
 /** Montré une fois la session ouverte. Rendu par le serveur, affiché tel quel. */
 export const GUIDE = {
   titre: 'Offrir un article',
-  chapeau: "Collez l'adresse d'un article de lexpress.fr. Vous recevez en retour un lien qui ouvre l'article en entier, sans abonnement, pendant la durée que vous choisissez.",
+  chapeau: "Collez l'adresse d'un article de lexpress.fr ou de lexpress.eu (éditions anglaise, française et polonaise). Vous recevez en retour un lien qui ouvre l'article en entier, sans abonnement, pendant la durée que vous choisissez.",
   exemple: 'https://www.lexpress.fr/politique/…',
   attente: 'Création en cours… Les articles sont chargés un par un : comptez une vingtaine de secondes.',
   conseils: [

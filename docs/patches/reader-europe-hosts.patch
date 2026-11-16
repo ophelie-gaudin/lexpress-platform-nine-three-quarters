@@ -22,37 +22,75 @@
  }
 --- /dev/null
 +++ b/src/lib/articleLanguage.ts
-@@ -0,0 +1,22 @@
-+// Textes et cibles relevés par GET public, 16 novembre 2026.
+@@ -0,0 +1,60 @@
++// Cibles et libellés du lecteur par langue d'article. Origine de chaque texte (« relevé » par GET
++// public le 16 novembre 2026, ou « traduit ») : docs/evidence/europe-reader-labels-20261116.json.
++import { copy, type Edition } from "./edition.ts";
++
 +export type ArticleLanguage = "en" | "fr" | "pl";
++export type ReaderCopy = { [K in keyof typeof copy.EUR]: string };
++const LANGUAGES: readonly string[] = ["en", "fr", "pl"];
++const LOCALES = { en: "en-GB", fr: "fr-FR", pl: "pl-PL" } as const;
++
++const EUROPE_HOSTS = new Map<string, ArticleLanguage>([["lexpress.eu", "en"], ["www.lexpress.eu", "en"], ["fr.lexpress.eu", "fr"], ["pl.lexpress.eu", "pl"]]);
++
 +export const EUROPE_ACTIONS = {
-+  en: { label: "Subscribe", home: "https://www.lexpress.eu/", subscription: "https://www.lexpress.eu/subscribe/" },
-+  fr: { label: "S'abonner", home: "https://fr.lexpress.eu/", subscription: "https://fr.lexpress.eu/abonnement/" },
-+  pl: { label: "Subskrypcja", home: "https://pl.lexpress.eu/", subscription: "https://pl.lexpress.eu/subskrypcja/" },
++  en: { label: "Subscribe", home: "https://www.lexpress.eu/", homeLabel: "Go to the homepage", subscription: "https://www.lexpress.eu/subscribe/" },
++  fr: { label: "S'abonner", home: "https://fr.lexpress.eu/", homeLabel: "Retour à l'accueil", subscription: "https://fr.lexpress.eu/abonnement/" },
++  pl: { label: "Subskrypcja", home: "https://pl.lexpress.eu/", homeLabel: "Przejdź na stronę główną", subscription: "https://pl.lexpress.eu/subskrypcja/" },
 +} as const;
-+export function articleActions(edition: "FR" | "EUR", language: ArticleLanguage) {
-+  if (edition === "FR") return { label: "S'abonner à L'Express", home: "https://www.lexpress.fr/", subscription: "https://abonnements-digitaux.lexpress.fr/offres" };
++
++// Polonais : mots fixes de la page de lecture, traduits une fois. Les articles, eux, viennent déjà traduits.
++const PL: ReaderCopy = {
++  title: "Artykuł w prezencie – L'Express Polska", description: "Otrzymujesz w prezencie artykuł L'Express. Miłej lektury.",
++  giftedBy: "Artykuł w prezencie od", subscribe: "Subskrypcja", by: "Autor:", published: "Opublikowano",
++  continueReading: "Czytaj dalej na pl.lexpress.eu", gifted: "Ten artykuł otrzymujesz w prezencie. Zapisz się do L'Express i odblokuj nieograniczony dostęp do wszystkich naszych artykułów.",
++  expired: "Ten link wygasł.", withdrawn: "Ten artykuł nie jest już dostępny.", unknown: "Ten link nie istnieje.",
++  limited: "Artykuły w prezencie są dostępne przez ograniczony czas.",
++  unavailable: "Nie można teraz wyświetlić tego artykułu.", technical: "Problem techniczny uniemożliwia załadowanie artykułu. Spróbuj ponownie za chwilę.",
++  retry: "Spróbuj ponownie", loading: "Ładowanie…", loadingArticle: "Ładowanie artykułu",
++  notFound: "Nie znaleziono strony", invalidLink: "Link, z którego korzystasz, jest nieprawidłowy.",
++  pageError: "Nie udało się załadować tej strony", pageErrorDetail: "Wystąpił problem techniczny. Spróbuj ponownie lub przejdź na stronę główną.", home: "Przejdź na stronę główną",
++};
++// fr.lexpress.eu : textes du lecteur France (décision du 16/11), sauf ce qui nomme lexpress.fr ou son abonnement.
++const FR_EUROPE: ReaderCopy = { ...copy.FR, subscribe: "S'abonner", continueReading: "Lire la suite sur fr.lexpress.eu" };
++
++export function isArticleLanguage(value: unknown): value is ArticleLanguage {
++  return typeof value === "string" && LANGUAGES.includes(value);
++}
++/** Sans langue connue (chargement, panne, lien inconnu), le contexte décide : FR français, EUR anglais. */
++export function readerCopy(edition: Edition, language?: ArticleLanguage | null): ReaderCopy {
++  if (edition === "FR") return copy.FR;
++  return language === "pl" ? PL : language === "fr" ? FR_EUROPE : copy.EUR;
++}
++export function formatArticleDate(iso: string | null | undefined, edition: Edition, language: ArticleLanguage): string | null {
++  if (!iso) return null;
++  const date = new Date(iso);
++  if (!Number.isFinite(date.getTime())) return null;
++  return new Intl.DateTimeFormat(edition === "FR" ? "fr-FR" : LOCALES[language], { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
++}
++export function articleActions(edition: Edition, language: ArticleLanguage) {
++  if (edition === "FR") return { label: "S'abonner à L'Express", home: "https://www.lexpress.fr/", homeLabel: "Retour à l'accueil", subscription: "https://abonnements-digitaux.lexpress.fr/offres" };
 +  return EUROPE_ACTIONS[language];
 +}
-+export function canonicalLanguage(edition: "FR" | "EUR", value: string): ArticleLanguage | null {
++export function canonicalLanguage(edition: Edition, value: string): ArticleLanguage | null {
 +  try {
 +    const authority = /^https:\/\/([^/?#]+)/i.exec(value)?.[1];
 +    if (!authority || /[:@\\]/.test(authority)) return null;
 +    const url = new URL(value);
 +    if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
 +    if (edition === "FR") return ["lexpress.fr", "www.lexpress.fr"].includes(url.hostname) ? "fr" : null;
-+    const hosts: Record<string, ArticleLanguage> = { "lexpress.eu": "en", "www.lexpress.eu": "en", "fr.lexpress.eu": "fr", "pl.lexpress.eu": "pl" };
-+    return Object.hasOwn(hosts, url.hostname) ? hosts[url.hostname] : null;
++    return EUROPE_HOSTS.get(url.hostname) ?? null;
 +  } catch { return null; }
 +}
 --- a/src/lib/giftArticle.ts
 +++ b/src/lib/giftArticle.ts
 @@ -1,3 +1,4 @@
-+import { canonicalLanguage, type ArticleLanguage } from "./articleLanguage.ts";
++import { canonicalLanguage, isArticleLanguage, type ArticleLanguage } from "./articleLanguage.ts";
  import type { ReaderContext } from "./edition.ts";
  import { readerDatabase } from "./deployment.ts";
  
-@@ -11,6 +12,7 @@
+@@ -11,11 +12,14 @@
    section: string;
    author?: string | null;
    published_at: string;
@@ -60,7 +98,14 @@
  };
  
  export type GiftArticleRefusal = {
-@@ -32,9 +34,9 @@
+   /** "unavailable" = technical failure (network, HTTP error, malformed response), never an editorial status. */
+   error: "expired" | "withdrawn" | "unknown" | "unavailable";
++  /** Lien expiré ou retiré seulement : langue de son article, pour traduire l'écran de refus. */
++  language?: ArticleLanguage;
+ };
+ 
+ export type GiftArticleResult = GiftArticle | GiftArticleRefusal;
+@@ -32,9 +36,9 @@
      p_token: token, p_utm_source: params.get("at_medium"), p_utm_campaign: params.get("at_campaign"),
      p_referrer: referrer, p_send_id: params.get("at_recipient_id") || params.get("s"), p_campaign_group: params.get("at_campaign_group"),
    };
@@ -73,9 +118,16 @@
    const db = readerDatabase(context);
    try {
      const res = await fetch(`${db.url}/rest/v1/rpc/${rpc}`, {
-@@ -47,9 +49,8 @@
+@@ -45,11 +49,14 @@
+     const rows: unknown = await res.json();
+     const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
      if (!row || typeof row !== "object") return { error: "unavailable" };
-     if (["expired", "withdrawn", "unknown"].includes(row.status)) return { error: row.status };
+-    if (["expired", "withdrawn", "unknown"].includes(row.status)) return { error: row.status };
++    if (row.status === "unknown") return { error: "unknown" };
++    if (row.status === "expired" || row.status === "withdrawn") {
++      // Seule une langue de la liste fermée est retenue ; elle ne choisit que des textes et cibles fixes.
++      return context.edition === "EUR" && isArticleLanguage(row.language) ? { error: row.status, language: row.language } : { error: row.status };
++    }
      if ((row.status === "ok" || row.status === "preview") && typeof row.title === "string" && typeof row.canonical_url === "string") {
 -      const url = new URL(row.canonical_url);
 -      const expected = context.edition === "EUR" ? "lexpress.eu" : "lexpress.fr";
@@ -106,28 +158,62 @@
      if (value && (key.startsWith("at_") || key === "s")) {
 --- a/src/routes/a.$token.tsx
 +++ b/src/routes/a.$token.tsx
-@@ -1,3 +1,4 @@
-+import { articleActions } from "@/lib/articleLanguage";
- import { copy, formatPublicationDate } from "@/lib/edition";
+@@ -1,4 +1,4 @@
+-import { copy, formatPublicationDate } from "@/lib/edition";
++import { articleActions, formatArticleDate, readerCopy, type ArticleLanguage } from "@/lib/articleLanguage";
  import { useReader } from "@/lib/useReader";
  import { createFileRoute, useRouterState } from "@tanstack/react-router";
-@@ -76,8 +77,13 @@
+ import { useQuery } from "@tanstack/react-query";
+@@ -22,7 +22,6 @@
+ 
+ export function GiftArticleContent({ token }: { token: string }) {
+   const reader = useReader();
+-  const t = copy[reader.edition];
+   const search = useRouterState({ select: (s) => s.location.searchStr });
+ 
+   const { data, isPending, isFetching, refetch } = useQuery({
+@@ -53,21 +52,14 @@
+       <main className="pb-16">
+         {isPending || !data ? (
+           <ArticleSkeleton />
+-        ) : isRefusal(data) && data.error === "unavailable" ? (
++        ) : !isRefusal(data) ? (
++          <ArticleView article={data} search={search} />
++        ) : data.error === "unavailable" ? (
+           <UnavailableView onRetry={() => refetch()} retrying={isFetching} />
+-        ) : isRefusal(data) ? (
+-          <RefusalView
+-            message={
+-              data.error === "expired"
+-                ? t.expired
+-                : data.error === "withdrawn"
+-                  ? t.withdrawn
+-                  : t.unknown
+-            }
+-            search={search}
+-          />
++        ) : data.error === "unknown" ? (
++          <RefusalView error="unknown" search={search} />
+         ) : (
+-          <ArticleView article={data} search={search} />
++          <RefusalView error={data.error} language={data.language} search={search} />
+         )}
+       </main>
+     </div>
+@@ -76,8 +68,10 @@
  
  function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
    const { edition } = useReader();
 -  const t = copy[edition];
 -  const date = formatPublicationDate(article.published_at, edition);
-+  // Textes d'habillage : français pour fr.lexpress.eu, sinon ceux de l'édition (pas de polonais inventé).
-+  const copyEdition = edition === "EUR" && article.language === "fr" ? "FR" : edition;
-+  const t = copy[copyEdition];
++  // Habillage dans la langue de l'article : en, fr (fr.lexpress.eu) ou pl. Le lecteur France ne change pas.
++  const t = readerCopy(edition, article.language);
 +  const actions = articleActions(edition, article.language);
-+  const date = formatPublicationDate(article.published_at, copyEdition);
-+  // Libellé historique conservé là où il nomme le bon domaine ; sinon domaine source, neutre.
-+  const sourceLabel = edition === "FR" || article.language === "en" ? t.continueReading : new URL(article.canonical_url).hostname;
++  const date = formatArticleDate(article.published_at, edition, article.language);
    const body = article.status === "ok" ? (article.body ?? "").trim() : "";
    const hasBody = body.length > 0;
  
-@@ -94,15 +100,15 @@
+@@ -94,15 +88,15 @@
        </div>
  
        <div className="measure px-5">
@@ -146,7 +232,7 @@
            {article.standfirst}
          </p>
  
-@@ -118,7 +124,7 @@
+@@ -118,7 +112,7 @@
          </div>
  
          {hasBody ? (
@@ -155,22 +241,52 @@
              {body.split(/\n{2,}/).map((paragraph, index) => {
                const html = sanitizeBodyHtml(paragraph);
                const Tag = /<(?:p|h2|h3|ul|ol|blockquote|figure)\b/i.test(html) ? "div" : "p";
-@@ -131,7 +137,7 @@
-               href={article.canonical_url}
-               className="inline-flex w-full items-center justify-center rounded-sm border border-express px-6 py-4 text-base font-semibold text-express transition-colors hover:bg-express hover:text-express-foreground"
-             >
--              {t.continueReading}
-+              {sourceLabel}
-             </a>
-           </div>
-         )}
-@@ -140,7 +146,8 @@
+@@ -140,32 +134,33 @@
            <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
              {t.gifted}
            </p>
 -          <SubscribeButton search={search} />
 +          <SubscribeButton search={search} language={article.language} />
-+          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{new URL(actions.home).hostname}</a>}
++          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{actions.homeLabel}</a>}
          </div>
        </div>
      </article>
+   );
+ }
+ 
+-function RefusalView({ message, search }: { message: string; search: string }) {
+-  const t = copy[useReader().edition];
++function RefusalView({ error, language, search }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage; search: string }) {
++  const t = readerCopy(useReader().edition, language);
+   return (
+     <div className="measure px-5 pt-20">
+       <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-foreground">
+-        {message}
++        {t[error]}
+       </h1>
+       <p className="mt-3 text-base leading-relaxed text-muted-foreground">
+         {t.limited}
+       </p>
+       <div className="mt-8">
+-        <SubscribeButton search={search} />
++        <SubscribeButton search={search} language={language} />
+       </div>
+     </div>
+   );
+ }
+ 
+ function UnavailableView({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+-  const t = copy[useReader().edition];
++  const t = readerCopy(useReader().edition);
+   return (
+     <div className="measure px-5 pt-20">
+       <h1 className="font-serif text-[1.75rem] font-semibold leading-tight text-foreground">
+@@ -189,7 +184,7 @@
+ }
+ 
+ function ArticleSkeleton() {
+-  const t = copy[useReader().edition];
++  const t = readerCopy(useReader().edition);
+   return (
+     <div aria-busy="true" aria-label={t.loadingArticle}>
+       <div className="measure px-5">

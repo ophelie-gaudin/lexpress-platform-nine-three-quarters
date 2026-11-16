@@ -672,6 +672,10 @@ La migration additive 017 stocke `articles.language` (EUR existant=en, France=fr
 La génération déduit en/fr/pl de l’hôte source et conserve les identifiants Arc
 distincts ; `get_gift_article_for_edition_v2` ajoute la langue au contrat de lecture
 sans changer les RPC historiques. Les origines des liens restent inchangées.
+La page de lecture affiche ses mots fixes dans la langue de l’article (en, fr, pl) ; les
+textes polonais sont relevés sur pl.lexpress.eu ou traduits une fois, origine par texte dans
+`docs/evidence/europe-reader-labels-20261116.json`. Un lien expiré ou retiré rend aussi la
+langue, pour traduire l’écran de refus. La RPC de disponibilité accepte pl. et fr.
 Le patch lecteur, le prompt Lovable et les retours arrière par étape sont dans
 [la procédure de langue](docs/implementation/article-language-release-20261116.md).
 Ordre de publication : migration, lecteur, fonction, interface ; la langue reste liée à
