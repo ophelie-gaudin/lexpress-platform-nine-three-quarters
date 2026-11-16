@@ -57,6 +57,9 @@ export async function chargerArticle(article, conf = {}) {
   const apercu = apercuDepuisHtml(await r.text(), target);
   // Une balise og:url ne peut déplacer le cache vers une autre édition.
   if (siteDepuisUrl(apercu.canonical_url) !== siteConfig) apercu.canonical_url = target;
+  // Forme normalisée : la base lie la langue à l'hôte de cette adresse, et le lecteur la relit.
+  // Un og:url précédé d'un espace passait le filtre mais faisait refuser tout le lot par la base.
+  else apercu.canonical_url = new URL(apercu.canonical_url).href;
   if (apercu.erreur) return apercu;
   return { ...apercu, source: 'page-publique' };
 }

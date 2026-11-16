@@ -51,5 +51,19 @@ export function trierUrls(urls) {
     if (r.arcId) retenus.push({ url, edition: r.edition, language: r.language, arcId: r.arcId, canonicalUrl: r.canonicalUrl });
     else rejets.push({ url, erreur: r.erreur });
   }
-  return { retenus, rejets };
+  // UN IDENTIFIANT ARC N'A QU'UNE LANGUE (revue adverse, 16 nov. 2026). Le même identifiant demandé
+  // par deux hôtes Europe rendait un seul jeton annoncé sous deux langues. Les deux demandes sont
+  // refusées : on ne devine pas laquelle est la bonne.
+  const langues = new Map();
+  for (const r of retenus) {
+    const cle = `${r.edition}:${r.arcId}`;
+    langues.set(cle, (langues.get(cle) ?? new Set()).add(r.language));
+  }
+  const nets = [];
+  for (const r of retenus) {
+    const vues = langues.get(`${r.edition}:${r.arcId}`);
+    if (vues.size > 1) rejets.push({ url: r.url, erreur: `même identifiant Arc demandé sous deux langues (${[...vues].sort().join(', ')})` });
+    else nets.push(r);
+  }
+  return { retenus: nets, rejets };
 }

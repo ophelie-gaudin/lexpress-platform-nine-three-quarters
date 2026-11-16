@@ -77,14 +77,18 @@ export function GiftArticleContent({ token }: { token: string }) {
 
 function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
   const { edition } = useReader();
-  const t = copy[edition === "EUR" && article.language === "fr" ? "FR" : edition];
+  // Textes d'habillage : français pour fr.lexpress.eu, sinon ceux de l'édition (pas de polonais inventé).
+  const copyEdition = edition === "EUR" && article.language === "fr" ? "FR" : edition;
+  const t = copy[copyEdition];
   const actions = articleActions(edition, article.language);
-  const date = formatPublicationDate(article.published_at, edition);
+  const date = formatPublicationDate(article.published_at, copyEdition);
+  // Libellé historique conservé là où il nomme le bon domaine ; sinon domaine source, neutre.
+  const sourceLabel = edition === "FR" || article.language === "en" ? t.continueReading : new URL(article.canonical_url).hostname;
   const body = article.status === "ok" ? (article.body ?? "").trim() : "";
   const hasBody = body.length > 0;
 
   return (
-    <article lang={article.language}>
+    <article>
       <div className="measure px-5">
         {/* Full width; never stretched. Very tall photos are center-cropped to a
             comfortable height instead of letterboxed. */}
@@ -96,15 +100,15 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
       </div>
 
       <div className="measure px-5">
-        <p className="mt-7 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-express">
+        <p lang={article.language} className="mt-7 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-express">
           {article.section}
         </p>
 
-        <h1 className="mt-3 font-serif text-[1.9rem] font-semibold leading-[1.15] tracking-[-0.01em] text-foreground sm:text-[2.35rem]">
+        <h1 lang={article.language} className="mt-3 font-serif text-[1.9rem] font-semibold leading-[1.15] tracking-[-0.01em] text-foreground sm:text-[2.35rem]">
           {article.title}
         </h1>
 
-        <p className="mt-4 font-serif text-lg leading-relaxed text-muted-foreground">
+        <p lang={article.language} className="mt-4 font-serif text-lg leading-relaxed text-muted-foreground">
           {article.standfirst}
         </p>
 
@@ -120,7 +124,7 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
         </div>
 
         {hasBody ? (
-          <div className="article-body mt-8">
+          <div lang={article.language} className="article-body mt-8">
             {body.split(/\n{2,}/).map((paragraph, index) => {
               const html = sanitizeBodyHtml(paragraph);
               const Tag = /<(?:p|h2|h3|ul|ol|blockquote|figure)\b/i.test(html) ? "div" : "p";
@@ -133,7 +137,7 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
               href={article.canonical_url}
               className="inline-flex w-full items-center justify-center rounded-sm border border-express px-6 py-4 text-base font-semibold text-express transition-colors hover:bg-express hover:text-express-foreground"
             >
-              {new URL(article.canonical_url).hostname}
+              {sourceLabel}
             </a>
           </div>
         )}
@@ -143,7 +147,7 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
             {t.gifted}
           </p>
           <SubscribeButton search={search} language={article.language} />
-          <a href={actions.home} className="mt-4 inline-block underline">{new URL(actions.home).hostname}</a>
+          {edition === "EUR" && <a href={actions.home} className="mt-4 inline-block underline">{new URL(actions.home).hostname}</a>}
         </div>
       </div>
     </article>

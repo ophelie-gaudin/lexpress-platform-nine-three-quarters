@@ -81,6 +81,9 @@ assert.match(ambiguous.erreur,/plusieurs sites Europe/);
 let fallbackUrl;
 await chargerArticle(arcIdDepuisUrl(`https://lexpress.eu/article-${id}`), {fetch:async url=>{fallbackUrl=url;return new Response('<meta property="og:title" content="Fixture">');}});
 assert.equal(new URL(fallbackUrl).hostname,'www.lexpress.eu');
+// Un og:url du bon site mais non normalisé (espace en tête) est stocké sous forme normalisée.
+const spaced = await chargerArticle(arcIdDepuisUrl(example), {fetch:async()=>new Response(`<meta property="og:title" content="Fixture"><meta property="og:url" content=" https://PL.lexpress.eu/normalise-${id}">`)});
+assert.equal(spaced.canonical_url,`https://pl.lexpress.eu/normalise-${id}`);
 let redirects = 0;
 const relative = await chargerArticle(arcIdDepuisUrl(example), {fetch:async()=>++redirects===1?new Response(null,{status:302,headers:{location:'/relative'}}):new Response('<meta property="og:title" content="Fixture">')});
 assert.equal(relative.source,'page-publique');
@@ -104,4 +107,13 @@ assert.deepEqual([...identifiers].sort(),[id,frenchId].sort());
 const cached=rpcCalls.find(c=>c.name==='cache_articles').args.p_articles;
 assert.equal(cached.find(a=>a.arc_id===id).language,'pl');
 assert.equal(cached.find(a=>a.arc_id===frenchId).language,'fr');
-console.log('Fonction : lot FR/PL avec identifiants fournis, langues et liens distincts, répétition PL dédupliquée par Arc ID.');
+// Un même identifiant Arc demandé sous deux langues : refusé pour les deux, jamais un jeton à deux langues.
+rpcCalls.length = 0;
+const conflict = await handler(new Request('https://local.invalid', {method:'POST',headers:{'x-gift-service-token':'fake'},body:JSON.stringify({urls:[example,`https://www.lexpress.eu/a-${id}`,`https://fr.lexpress.eu/a-${frenchId}`]})}));
+const conflictResult = await conflict.json();
+assert.equal(conflict.status,200);
+assert.deepEqual(conflictResult.links.map(l=>[l.arc_id,l.language]),[[frenchId,'fr']]);
+assert.equal(conflictResult.rejected.length,2);
+assert.ok(conflictResult.rejected.every(r=>/deux langues/.test(r.erreur)),JSON.stringify(conflictResult.rejected));
+assert.ok(rpcCalls.filter(c=>c.name==='cache_articles').every(c=>c.args.p_articles.every(x=>x.arc_id!==id)),'rien mis en cache pour l’identifiant ambigu');
+console.log('Fonction : lot FR/PL avec identifiants fournis, langues et liens distincts, répétition PL dédupliquée par Arc ID, identifiant sous deux langues refusé.');
