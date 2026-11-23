@@ -90,10 +90,18 @@ inoffensif sans offre, mais publié avant la migration il ferait un appel en 404
 
 ### 0. TEST d’abord
 
-La recette Lovable lit la base TEST du lecteur (référence à relever dans le projet Lovable,
-elle n’est pas dans ce dépôt). Après accord : appliquer 018 sur TEST, y déployer la fonction,
-créer un jeton de recette avec le droit, puis une offre France et une offre polonaise de
-recette (§ « Créer une offre » du README). Les transmettre avec le message Lovable.
+La base TEST est la branche Supabase persistante `test-europe` du projet, ref
+`gsvvcrhagatwjwyyjkli` (URL `https://gsvvcrhagatwjwyyjkli.supabase.co`). Mêmes gestes que
+ci-dessous en remplaçant la ref PROD par celle-ci : appliquer 018, déployer la fonction, créer
+un jeton de recette avec le droit, puis une offre France et une offre polonaise de recette
+(§ « Créer une offre » du README). Les transmettre avec le message Lovable.
+
+Fait le 23/11/2026 : 018, fonction v1 et jeton `marketing-offres-test` en place sur TEST ;
+54 contrôles HTTP sur 54 et retour arrière vérifiés.
+
+Nettoyage d’une recette : l’API ne supprime pas une offre, elle la termine (`DELETE`). Pour
+effacer les offres de recette sur TEST, après les avoir terminées :
+`DELETE FROM public.subscription_offers WHERE request_id LIKE 'recette-%';`
 
 ### 1. Migration 018 (PROD `ovifzentveeehhtlnugk`)
 
@@ -187,4 +195,5 @@ dépendre du patch.
   `SELECT * FROM public.subscription_offers;` (copie privée), puis appliquer
   `gift-links/supabase/rollback/018-offres-abonnement.sql` par le même endpoint. Supprime la
   table, ses fonctions et la colonne `manage_offers` ; liens, articles, lectures et jetons
-  restent. Rejouer 018 ensuite est possible (testé), le droit repart à faux.
+  restent. Rejouer 018 ensuite est possible (testé), le droit repart à faux : **réaccorder ensuite
+  `manage_offers` au jeton marketing** (`UPDATE … SET manage_offers = true WHERE name = 'marketing-offres';`).
