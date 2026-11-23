@@ -14,11 +14,15 @@ export function SubscribeBar({ token, search, language }: { token: string; searc
   const reader = useReader();
   const site = offerSite(reader.edition, language);
   const { data: offer, isPending } = useQuery({
-    // Une lecture par article affiché : un article ouvert après le début d'une offre la voit.
+    // Une lecture par affichage : rien n'est gardé une fois la barre démontée (gcTime 0), si bien qu'un
+    // article rouvert après le début d'une offre la voit, sans montrer d'abord l'ancienne réponse.
     queryKey: ["subscription-offer", reader.environment, site, token],
     queryFn: () => getSubscriptionOffer(site, reader),
     enabled: typeof window !== "undefined",
     staleTime: Infinity,
+    gcTime: 0,
+    // Hors ligne, la requête part quand même : son délai et son repli rendent le bouton par défaut.
+    networkMode: "always",
     refetchOnWindowFocus: false,
     retry: false,
   });

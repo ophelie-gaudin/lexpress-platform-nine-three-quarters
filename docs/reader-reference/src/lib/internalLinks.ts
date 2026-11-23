@@ -30,8 +30,9 @@ export function keepsLink(href: string | null | undefined): boolean {
   }
 }
 
-// Une balise <a …> ou </a>, guillemets compris : un « > » entre guillemets ne la coupe pas.
-const TAG = /<(\/?)a\b((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/gi;
+// Toute balise, guillemets compris : un « < » ou un « > » à l'intérieur d'une valeur d'attribut (alt d'une
+// image…) ne compte jamais comme une balise. Seules les balises a sont modifiées ; les autres passent telles quelles.
+const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
 // Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
 const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
@@ -43,6 +44,8 @@ function hrefOf(attributes: string): string | null {
   return null;
 }
 
+const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** Retire les liens internes d'un fragment HTML déjà assaini, en gardant leur texte. */
 export function unlinkInternalLinks(html: string): string {
   let out = "";
@@ -52,16 +55,14 @@ export function unlinkInternalLinks(html: string): string {
   TAG.lastIndex = 0;
   for (let match = TAG.exec(html); match; match = TAG.exec(html)) {
     out += html.slice(from, match.index);
-    const [tag, closing, attributes = "", end] = match;
+    const [tag, closing, name = "", attributes = "", end] = match;
     if (!end) {
-      // Balise mal formée (guillemet non fermé…) : le href est illisible, la balise part jusqu'au prochain « > ».
-      const next = html.indexOf(">", match.index + tag.length);
-      from = next === -1 ? html.length : next + 1;
-      TAG.lastIndex = from;
-      if (!closing) open = "removed";
-      continue;
+      // Balise mal formée (guillemet jamais fermé…) : on ne sait plus où finissent les attributs. Le reste du
+      // fragment devient du texte échappé : ni lien, ni attribut, ni balise ne peut en sortir.
+      return out + escapeText(html.slice(match.index));
     }
     from = match.index + tag.length;
+    if (name.toLowerCase() !== "a") { out += tag; continue; }
     if (closing) {
       if (open === "kept") out += tag;
       open = null;
