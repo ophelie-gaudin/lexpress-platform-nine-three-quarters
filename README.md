@@ -328,7 +328,7 @@ curl --silent -X POST \
 | Champ | Obligatoire | Règle | Par défaut |
 | --- | --- | --- | --- |
 | `sites` | **oui** | un à quatre parmi `www.lexpress.fr`, `www.lexpress.eu`, `fr.lexpress.eu`, `pl.lexpress.eu` | — |
-| `ends_at` | **oui** | date ISO 8601 **avec fuseau** (`+01:00` ou `Z`), dans le futur, après `starts_at` | — |
+| `ends_at` | **oui** | date ISO 8601 **avec fuseau** (`+01:00` ou `Z`), à la milliseconde au plus, dans le futur, après `starts_at` | — |
 | `starts_at` | non | même format | maintenant |
 | `url` | non | `https://` sur `abonnements-digitaux.lexpress.fr`, `lexpress.fr`, `www.lexpress.fr`, `lexpress.eu`, `www.lexpress.eu`, `fr.lexpress.eu` ou `pl.lexpress.eu`, **du domaine de chaque site visé** ; sans port ni espace ; 500 caractères au plus | le lien par défaut de chaque site |
 | `label` | non | 1 à 40 caractères, une ligne, sans `<` `>` ; **tous les sites visés doivent être de la même langue** | le texte par défaut de chaque site, dans sa langue |
@@ -369,7 +369,7 @@ Réponse `201` (valeurs fictives) :
 ### Plusieurs offres en même temps
 
 Si plusieurs offres sont en cours pour un même site, **la plus récemment commencée
-s’affiche** ; à début égal, la plus récemment créée (à la microseconde, puis l’`id`). Une offre flash de deux jours posée
+s’affiche** ; à début égal, la plus récemment créée (puis l’`id`). Une offre flash de deux jours posée
 pendant une offre d’un mois s’affiche donc pendant ses deux jours, puis l’offre du mois
 reprend toute seule.
 
@@ -405,9 +405,11 @@ curl --silent -X DELETE \
   -H 'x-gift-service-token: VOTRE_JETON' | python3 -m json.tool
 ```
 
-`result` dit ce qui s’est passé : `deleted` (l’offre n’avait pas commencé, elle est
-supprimée), `ended` (elle était en cours, elle se termine maintenant et le bouton par défaut
-revient), `already_ended` (rien à faire). Pour **modifier** une offre : la terminer, puis en
+`result` dit ce qui s’est passé : `cancelled` (l’offre n’avait pas commencé, elle ne
+s’affichera pas), `ended` (elle était en cours, elle se termine maintenant et le bouton par
+défaut revient), `already_ended` (rien à faire). L’offre reste dans la liste, `status: "ended"`
+et `ended_at` renseigné ; ses dates ne changent pas, et un POST rejoué avec le même
+`request_id` la retrouve sans la rallumer. Pour **modifier** une offre : la terminer, puis en
 créer une nouvelle.
 
 | HTTP | Sens |
