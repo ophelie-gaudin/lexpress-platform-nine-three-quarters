@@ -81,6 +81,10 @@ date seule, et ne jamais inventer de nom.
 
 ## 5. Le bouton d'abonnement
 
+> **Remplacé le 23 novembre 2026** pour l'emplacement et la destination : une seule barre en bas de
+> l'écran, avec l'offre du moment quand il y en a une. Voir
+> `docs/implementation/lovable-subscription-bar-prompt.md`. La règle des paramètres ci-dessous reste.
+
 Présent dans les cinq états, y compris sur un refus.
 
 Destination : `https://abonnements-digitaux.lexpress.fr/offres`
@@ -183,7 +187,9 @@ brut ferait apparaître les balises et perdrait la structure.
 `i`, `em`, `a`, `br`, `p`. Tout le reste doit être échappé, pas interprété. Le contenu vient de notre
 CMS, mais la page est publique et la règle ne coûte rien.
 
-Les liens du corps pointent vers lexpress.fr : les laisser, et les ouvrir dans un nouvel onglet.
+Les liens du corps pointent vers lexpress.fr : ~~les laisser~~ — **depuis le 23 novembre 2026, les liens
+vers lexpress.fr et lexpress.eu sont retirés, texte gardé** (aucune navigation interne) ; les liens
+externes restent, ouverts dans un nouvel onglet.
 
 ## 5 ter. Le corps porte désormais des citations et des images (7 oct. 2026)
 

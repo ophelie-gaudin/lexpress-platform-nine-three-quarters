@@ -37,7 +37,11 @@ Ouvrir les liens éditoriaux dans un nouvel onglet avec les protections correspo
 
 ## Abonnement et attribution
 
-Le bouton est présent dans les cinq statuts SQL. Destination : `https://abonnements-digitaux.lexpress.fr/offres`.
+**Une seule action d'abonnement par page (23 novembre 2026)** : une barre collée en bas de l'écran (`sticky bottom-0`, dernier élément de la page), présente dans les cinq statuts SQL, absente pendant le chargement et sur la panne technique. Aucun autre bouton d'abonnement, ni dans l'en-tête, ni dans le contenu. Destination par défaut : `https://abonnements-digitaux.lexpress.fr/offres` (France ; les sites Europe ont la leur, voir le README).
+
+**Offre du moment** : la page appelle `get_subscription_offer({ p_site })` avec la clé `anon`, une fois par affichage, 4 s au plus, sans réessai. La RPC rend au plus une ligne `label`, `url`, `ends_at` ; `null` = valeur par défaut. Toute réponse hors règle, erreur ou délai → bouton par défaut. Règles complètes et site par lecteur : `docs/implementation/lovable-subscription-bar-prompt.md`.
+
+**Corps d'article** : les liens vers `lexpress.fr` / `lexpress.eu` (et sous-domaines), relatifs ou illisibles sont retirés en gardant leur texte ; seuls les liens `http(s)` absolus vers un autre site restent.
 
 **La page ne fabrique aucun paramètre de suivi : elle recopie ceux du visiteur.** Liste blanche — tout `at_*`, plus `s`, rien d'autre. `set` et non `append`, pour qu'une dimension ne reçoive jamais deux valeurs. Un paramètre absent de l'URL d'arrivée reste absent : pas de valeur par défaut, pas de repli sur la base.
 
@@ -54,6 +58,8 @@ for (const [cle, valeur] of new URLSearchParams(location.search))
 | `at_campaign` | la campagne | oui, `utm_campaign` |
 | `at_campaign_group` | le segment du prospect | oui, `campaign_group` |
 | `at_*` à venir | toute dimension AT Internet future | **non** — transmise au site, pas stockée |
+
+Avec une offre, la même règle s'applique à l'URL de l'offre : ses propres paramètres restent, ceux du visiteur s'y ajoutent et l'emportent en cas de doublon.
 
 La règle est un **préfixe**, pas une liste figée : ajouter une dimension de suivi ne demande aucune modification de la page. En revanche, la conserver en base demanderait une colonne, donc une migration.
 
