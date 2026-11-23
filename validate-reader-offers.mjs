@@ -156,16 +156,17 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
 
   // ── 5. LA BARRE : une seule action, collée en bas, sur l'article comme sur un refus.
   queries['subscription-offer'] = { isPending: true };
-  check(bar.SubscribeBar({ search: '', language: 'pl' }) === null, 'offre en cours de lecture : pas de libellé qui change sous les yeux');
-  check(queries.last.queryKey.join() === 'subscription-offer,TEST,pl.lexpress.eu' && queries.last.retry === false, 'requête par environnement et par site, sans réessai');
+  check(bar.SubscribeBar({ token: 'a'.repeat(32), search: '', language: 'pl' }) === null, 'offre en cours de lecture : pas de libellé qui change sous les yeux');
+  check(queries.last.queryKey.join() === `subscription-offer,TEST,pl.lexpress.eu,${'a'.repeat(32)}` && queries.last.retry === false,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : une lecture par article affiché (clé : environnement, site, jeton), sans réessai — un article ouvert après le début d’une offre la voit');
   queries['subscription-offer'] = { isPending: false, data: null };
-  const sansOffre = bar.SubscribeBar({ search: '?at_medium=Whatsapp', language: 'pl' });
+  const sansOffre = bar.SubscribeBar({ token: 'a'.repeat(32), search: '?at_medium=Whatsapp', language: 'pl' });
   check(/\bsticky\b/.test(sansOffre.props.className) && /\bbottom-0\b/.test(sansOffre.props.className) && !/\bfixed\b/.test(sansOffre.props.className),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : barre sticky en bas, pas fixed — en fin de page elle reprend sa place sous le contenu et ne recouvre jamais la fin de l’article');
   check(/safe-area-inset-bottom/.test(sansOffre.props.className), 'la barre évite la zone du geste d’accueil des téléphones');
   check(anchors(sansOffre).length === 1 && texts(sansOffre).join('') === 'Subskrypcja' && anchors(sansOffre)[0].props.href === 'https://pl.lexpress.eu/subskrypcja/?at_medium=Whatsapp', 'sans offre : le bouton d’aujourd’hui');
   queries['subscription-offer'] = { isPending: false, data: { label: 'Promocja', url: 'https://pl.lexpress.eu/subskrypcja/?promo=1', endsAt: Date.now() + 1e6 } };
-  const avec = bar.SubscribeBar({ search: '?s=abc', language: 'pl' });
+  const avec = bar.SubscribeBar({ token: 'a'.repeat(32), search: '?s=abc', language: 'pl' });
   check(texts(avec).join('') === 'Promocja' && anchors(avec)[0].props.href === 'https://pl.lexpress.eu/subskrypcja/?promo=1&s=abc', 'avec offre : son libellé, son URL, les UTM du visiteur');
 
   // La page : la barre est le dernier élément, hors du contenu, et le seul bouton d'abonnement.
@@ -199,7 +200,7 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   reader = { edition: 'FR', environment: 'TEST' };
   const france = page({ ...article, canonical_url: 'https://www.lexpress.fr/a', language: 'fr', body: 'x' });
   check(anchors(france).filter((a) => a.props.href.startsWith('https://abonnements-digitaux.lexpress.fr/offres')).length === 1, 'France : un seul bouton, vers /offres');
-  check(queries.last.queryKey.join() === 'subscription-offer,TEST,www.lexpress.fr', 'France : l’offre lue est celle de www.lexpress.fr');
+  check(queries.last.queryKey.join() === `subscription-offer,TEST,www.lexpress.fr,${'a'.repeat(32)}`, 'France : l’offre lue est celle de www.lexpress.fr');
 
   // ── 6. LES LIENS INTERNES DU CORPS (point 6) : texte gardé, lien retiré, liens externes intacts.
   reader = { edition: 'EUR', environment: 'TEST' };
@@ -225,14 +226,19 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     ['sans href', '<a name="x">a</a>', 'a'],
     ['javascript', '<a href="javascript:alert(1)">a</a>', 'a'],
     ['non fermé', 'avant <a href="https://www.lexpress.fr/x">a et la suite', 'avant a et la suite'],
-    ['guillemet non fermé', 'avant <a href="https://www.lexpress.fr/x>a</a>', 'avant a</a>'],
+    ['guillemet non fermé', 'avant <a href="https://www.lexpress.fr/x>a</a>', 'avant a'],
+    ['title qui cite un href externe', '<a title=" href=https://ext.example/" href="https://www.lexpress.fr/x">a</a>', 'a'],
+    ['title qui cite un href, guillemets simples', "<a title=' href=\"https://ext.example/\"' href='https://www.lexpress.fr/x'>a</a>", 'a'],
+    ['deux href : le premier compte', '<a href="https://www.lexpress.fr/x" href="https://ext.example/">a</a>', 'a'],
+    ['fermeture orpheline', 'a</a> b', 'a b'],
     ['contenu riche', '<a href="https://www.lexpress.fr/x"><b>gras</b> et <i>it</i></a>', '<b>gras</b> et <i>it</i>'],
     ['chevron dans un attribut', '<a title="a>b" href="https://www.lexpress.fr/x">a</a>', 'a'],
     ['deux liens', '<a href="https://www.lexpress.fr/1">un</a> <a href="https://ext.example/2">deux</a>', 'un <a href="https://ext.example/2">deux</a>'],
     ['data-href trompeur', '<a data-href="https://ext.example/" href="https://www.lexpress.fr/x">a</a>', 'a'],
   ]) check(u(html) === attendu, `${cas} : ${JSON.stringify(u(html))}`);
   for (const garde of ['<a href="https://www.gouv.fr/r.pdf" target="_blank" rel="noopener">r</a>', '<a href="http://example.org/">e</a>',
-    '<a href="https://lexpress.fr.example.org/">sosie</a>', '<a href="https://notlexpress.fr/">voisin</a>', '<abbr title="x">abbr</abbr>']) {
+    '<a href="https://lexpress.fr.example.org/">sosie</a>', '<a href="https://notlexpress.fr/">voisin</a>', '<abbr title="x">abbr</abbr>',
+    '<a title="a > b" href="https://www.gouv.fr/r.pdf">rapport</a>', '<a title=" href=https://www.lexpress.fr/" href="https://ext.example/">ext</a>']) {
     check(u(garde) === garde, `gardé tel quel : ${garde}`);
   }
   check(u('texte sans lien, <b>gras</b>') === 'texte sans lien, <b>gras</b>', 'un paragraphe sans lien ne change pas');

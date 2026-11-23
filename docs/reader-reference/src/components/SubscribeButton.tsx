@@ -10,14 +10,15 @@ import { getSubscriptionOffer, offerSite } from "@/lib/subscriptionOffer";
  * sa place sous le contenu une fois en bas, et ne recouvre donc jamais la fin de l'article.
  * L'offre du moment (table « offres ») remplace libellé et cible ; sans offre, le bouton d'aujourd'hui.
  */
-export function SubscribeBar({ search, language }: { search: string; language?: ArticleLanguage }) {
+export function SubscribeBar({ token, search, language }: { token: string; search: string; language?: ArticleLanguage }) {
   const reader = useReader();
   const site = offerSite(reader.edition, language);
   const { data: offer, isPending } = useQuery({
-    queryKey: ["subscription-offer", reader.environment, site],
+    // Une lecture par article affiché : un article ouvert après le début d'une offre la voit.
+    queryKey: ["subscription-offer", reader.environment, site, token],
     queryFn: () => getSubscriptionOffer(site, reader),
     enabled: typeof window !== "undefined",
-    staleTime: 60_000,
+    staleTime: Infinity,
     refetchOnWindowFocus: false,
     retry: false,
   });
