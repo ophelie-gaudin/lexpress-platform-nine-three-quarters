@@ -15,8 +15,11 @@ try {
   }
   const applied=spawnSync('patch',['--batch','-p1','-i',resolve('docs/patches/reader-europe-hosts.patch')],{cwd:dir,encoding:'utf8'});
   assert.equal(applied.status,0,applied.stdout+applied.stderr);
-  for(const file of walk('docs/reader-reference')){
-    const relative=file.slice('docs/reader-reference/'.length);
+  // Le résultat de ce patch est le point de départ du patch suivant (barre d'abonnement, 23/11) :
+  // gift-links/fixtures/reader-offers-before. La référence finale est vérifiée par validate-reader-offers.mjs.
+  const after='gift-links/fixtures/reader-offers-before';
+  for(const file of walk(after)){
+    const relative=file.slice(after.length+1).replace(/\.txt$/,'');
     assert.equal(readFileSync(join(dir,relative),'utf8'),readFileSync(file,'utf8'),relative);
   }
   // Contrôle de types strict des sources patchées (transpileModule, plus bas, ne vérifie aucun type).

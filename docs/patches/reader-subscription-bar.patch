@@ -1,0 +1,290 @@
+--- a/src/components/SubscribeButton.tsx
++++ b/src/components/SubscribeButton.tsx
+@@ -1,16 +1,39 @@
+-import { articleActions, type ArticleLanguage } from "@/lib/articleLanguage";
+-import { copy } from "@/lib/edition";
++import { useQuery } from "@tanstack/react-query";
++import type { ArticleLanguage } from "@/lib/articleLanguage";
+ import { useReader } from "@/lib/useReader";
+-import { buildSubscriptionUrl } from "@/lib/subscriptionLink";
++import { subscriptionAction } from "@/lib/subscriptionLink";
++import { getSubscriptionOffer, offerSite } from "@/lib/subscriptionOffer";
+ 
+-export function SubscribeButton({ search, language }: { search: string; language?: ArticleLanguage }) {
+-  const { edition } = useReader();
++/**
++ * La seule action d'abonnement de la page (retour d'Enzo du 20/11, points 1 et 2) : une barre collée en
++ * bas de l'écran, toujours visible. `sticky` et non `fixed` : placée en dernier dans la page, elle reprend
++ * sa place sous le contenu une fois en bas, et ne recouvre donc jamais la fin de l'article.
++ * L'offre du moment (table « offres ») remplace libellé et cible ; sans offre, le bouton d'aujourd'hui.
++ */
++export function SubscribeBar({ search, language }: { search: string; language?: ArticleLanguage }) {
++  const reader = useReader();
++  const site = offerSite(reader.edition, language);
++  const { data: offer, isPending } = useQuery({
++    queryKey: ["subscription-offer", reader.environment, site],
++    queryFn: () => getSubscriptionOffer(site, reader),
++    enabled: typeof window !== "undefined",
++    staleTime: 60_000,
++    refetchOnWindowFocus: false,
++    retry: false,
++  });
++  // Quatre secondes au plus (délai de la requête) : pas de libellé qui change sous les yeux du lecteur.
++  if (isPending) return null;
++  const action = subscriptionAction(search, reader.edition, language, offer);
+   return (
+-    <a
+-      href={buildSubscriptionUrl(search, edition, language)}
+-      className="inline-flex w-full items-center justify-center rounded-sm bg-express px-6 py-4 text-center text-base font-semibold tracking-wide text-express-foreground transition-opacity hover:opacity-90"
+-    >
+-      {language ? articleActions(edition, language).label : copy[edition].subscribe}
+-    </a>
++    <div className="sticky bottom-0 z-40 border-t border-rule bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur">
++      <div className="measure px-5 py-3">
++        <a
++          href={action.href}
++          className="inline-flex w-full items-center justify-center rounded-sm bg-express px-6 py-3.5 text-center text-base font-semibold tracking-wide text-express-foreground transition-opacity hover:opacity-90"
++        >
++          {action.label}
++        </a>
++      </div>
++    </div>
+   );
+ }
+--- /dev/null
++++ b/src/lib/internalLinks.ts
+@@ -0,0 +1,50 @@
++// Liens du corps d'article (retour d'Enzo du 20/11, point 6) : aucune navigation interne.
++// Un lien vers lexpress.fr ou lexpress.eu mène au mur d'abonnement ; on garde son texte, on retire le lien.
++// Seul un lien http(s) absolu vers un autre site reste cliquable (un rapport, un PDF officiel…).
++// Dans le doute (adresse relative, illisible, masquée par des entités), le lien est retiré.
++
++const INTERNAL_HOST = /(^|\.)lexpress\.(fr|eu)$/;
++const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", colon: ":", sol: "/", tab: "\t", newline: "\n", period: "." };
++
++function decodeEntities(value: string): string {
++  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);?/gi, (whole, name: string) => {
++    if (name[0] === "#") {
++      const code = name[1] === "x" || name[1] === "X" ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
++      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
++    }
++    return ENTITIES[name.toLowerCase()] ?? whole;
++  });
++}
++
++/** Vrai seulement pour un lien http(s) absolu vers un site qui n'est pas L'Express. */
++export function keepsLink(href: string | null | undefined): boolean {
++  if (!href) return false;
++  const value = decodeEntities(href).trim();
++  if (!/^https?:\/\//i.test(value.replace(/[\u0000- ]/g, ""))) return false;
++  try {
++    const url = new URL(value);
++    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
++    return !INTERNAL_HOST.test(url.hostname.toLowerCase().replace(/\.$/, ""));
++  } catch {
++    return false;
++  }
++}
++
++const ATTRIBUTES = String.raw`((?:[^>"']|"[^"]*"|'[^']*')*)`;
++const ANCHOR = new RegExp(String.raw`<a\b${ATTRIBUTES}>([\s\S]*?)<\/a\s*>`, "gi");
++const OPENING = new RegExp(String.raw`<a\b${ATTRIBUTES}>`, "gi");
++const HREF = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
++
++function hrefOf(attributes: string): string | null {
++  const match = HREF.exec(attributes);
++  return match ? (match[1] ?? match[2] ?? match[3] ?? null) : null;
++}
++
++/** Retire les liens internes d'un fragment HTML déjà assaini, en gardant leur texte. */
++export function unlinkInternalLinks(html: string): string {
++  const paired = html.replace(ANCHOR, (whole: string, attributes: string, inner: string) => (keepsLink(hrefOf(attributes)) ? whole : inner));
++  // Une balise ouvrante sans fermeture ferait un lien jusqu'à la fin du paragraphe : elle part aussi.
++  const opened = paired.replace(OPENING, (tag: string, attributes: string) => (keepsLink(hrefOf(attributes)) ? tag : ""));
++  // Dernier filet : une balise mal formée (guillemet non fermé) que les deux passes n'ont pas reconnue.
++  return opened.replace(/<a\b[^>]*>?/gi, (tag: string) => (keepsLink(hrefOf(tag.slice(2))) ? tag : ""));
++}
+--- a/src/lib/subscriptionLink.ts
++++ b/src/lib/subscriptionLink.ts
+@@ -1,5 +1,6 @@
+ import { articleActions, type ArticleLanguage } from "./articleLanguage.ts";
+-import { editions, type Edition } from "./edition.ts";
++import { copy, editions, type Edition } from "./edition.ts";
++import type { SubscriptionOffer } from "./subscriptionOffer.ts";
+ 
+ /**
+  * Builds the subscription URL from the visitor's own link.
+@@ -9,10 +10,13 @@
+  * anyone inject their own dimensions into Piano. `set` is used, never `append`,
+  * so a parameter repeated in the link keeps a single value. A parameter that is
+  * absent stays absent: no defaults, no fallback, no fabricated tracking.
++ *
++ * With an offer URL (table « offres », 018), the same parameters are added to it;
++ * its own parameters (promo code…) are kept, and an `at_*` of the visitor wins.
+  */
+-export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage): string {
++export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage, offerUrl?: string | null): string {
+   const incoming = new URLSearchParams(search ?? "");
+-  const url = new URL(language ? articleActions(edition, language).subscription : editions[edition].subscription);
++  const url = new URL(offerUrl ?? (language ? articleActions(edition, language).subscription : editions[edition].subscription));
+ 
+   for (const [key, value] of incoming) {
+     if (value && (key.startsWith("at_") || key === "s")) {
+@@ -21,4 +25,13 @@
+   }
+ 
+   return url.toString();
++}
++
++/** Label and target of the subscription bar: the current offer when there is one, else today's button. */
++export function subscriptionAction(search: string, edition: Edition, language?: ArticleLanguage, offer?: SubscriptionOffer | null, now = Date.now()) {
++  const current = offer && offer.endsAt > now ? offer : null;
++  return {
++    label: current?.label ?? (language ? articleActions(edition, language).label : copy[edition].subscribe),
++    href: buildSubscriptionUrl(search, edition, language, current?.url),
++  };
+ }
+--- /dev/null
++++ b/src/lib/subscriptionOffer.ts
+@@ -0,0 +1,49 @@
++// Offre d'abonnement du moment (migration 018), lue par la clé publique via la RPC get_subscription_offer.
++// Hors offre, ou au moindre doute sur la réponse, le lecteur garde son bouton par défaut : jamais un bouton cassé.
++import type { ArticleLanguage } from "./articleLanguage.ts";
++import type { Edition, ReaderContext } from "./edition.ts";
++import { readerDatabase } from "./deployment.ts";
++
++export type OfferSite = "www.lexpress.fr" | "www.lexpress.eu" | "fr.lexpress.eu" | "pl.lexpress.eu";
++export type SubscriptionOffer = { label: string | null; url: string | null; endsAt: number };
++
++/** Site dont l'offre s'applique : France, ou le site Europe de la langue de l'article (anglais sans langue connue). */
++export function offerSite(edition: Edition, language?: ArticleLanguage | null): OfferSite {
++  if (edition === "FR") return "www.lexpress.fr";
++  return language === "pl" ? "pl.lexpress.eu" : language === "fr" ? "fr.lexpress.eu" : "www.lexpress.eu";
++}
++
++/** Même règle que la base : https, hôte de la liste, du domaine du site, sans port, identifiants ni espace. */
++export function isAllowedOfferUrl(url: string, site: OfferSite): boolean {
++  if (url.length > 500 || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return false;
++  const pattern = site === "www.lexpress.fr"
++    ? /^https:\/\/(abonnements-digitaux\.lexpress\.fr|(www\.)?lexpress\.fr)([/?]|$)/
++    : /^https:\/\/((www|fr|pl)\.)?lexpress\.eu([/?]|$)/;
++  return pattern.test(url);
++}
++
++/** Valide la réponse de la RPC. Tout écart rend null : le lecteur garde alors son bouton par défaut. */
++export function parseOffer(rows: unknown, site: OfferSite, now = Date.now()): SubscriptionOffer | null {
++  if (!Array.isArray(rows) || rows.length !== 1) return null;
++  const row: unknown = rows[0];
++  if (!row || typeof row !== "object") return null;
++  const { label, url, ends_at } = row as Record<string, unknown>;
++  const endsAt = typeof ends_at === "string" ? Date.parse(ends_at) : NaN;
++  if (!Number.isFinite(endsAt) || endsAt <= now) return null;
++  if (label !== null && (typeof label !== "string" || label !== label.trim() || [...label].length < 1 || [...label].length > 40 || /[\u0000-\u001f\u007f<>]/.test(label))) return null;
++  if (url !== null && (typeof url !== "string" || !isAllowedOfferUrl(url, site))) return null;
++  return { label, url, endsAt };
++}
++
++/** Une requête, quatre secondes au plus ; n'échoue jamais : null = bouton par défaut. */
++export async function getSubscriptionOffer(site: OfferSite, context: ReaderContext): Promise<SubscriptionOffer | null> {
++  const db = readerDatabase(context);
++  try {
++    const res = await fetch(`${db.url}/rest/v1/rpc/get_subscription_offer`, {
++      method: "POST", headers: { apikey: db.anonKey, Authorization: `Bearer ${db.anonKey}`, "Content-Type": "application/json" },
++      body: JSON.stringify({ p_site: site }), signal: AbortSignal.timeout(4000),
++    });
++    if (!res.ok) return null;
++    return parseOffer(await res.json(), site);
++  } catch { return null; }
++}
+--- a/src/routes/a.$token.tsx
++++ b/src/routes/a.$token.tsx
+@@ -7,8 +7,9 @@
+ import { sendPageDisplay } from "@/lib/piano";
+ 
+ import { GiftHeader } from "@/components/GiftHeader";
+-import { SubscribeButton } from "@/components/SubscribeButton";
++import { SubscribeBar } from "@/components/SubscribeButton";
+ import { sanitizeBodyHtml } from "@/lib/bodyHtml";
++import { unlinkInternalLinks } from "@/lib/internalLinks";
+ import { getGiftArticle, isRefusal, type GiftArticle } from "@/lib/giftArticle";
+ 
+ export const Route = createFileRoute("/a/$token")({
+@@ -46,27 +47,32 @@
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [token, pianoState, reader.edition, reader.environment]);
+ 
++  // Une seule barre d'abonnement, en bas de l'écran, sur l'article comme sur un refus. Pas pendant le
++  // chargement ni sur une panne technique : il n'y a encore rien à proposer, et la langue est inconnue.
++  const bar = !data || (isRefusal(data) && data.error === "unavailable") ? null : { language: data.language };
++
+   return (
+-    <div className="min-h-screen bg-background">
++    <div className="flex min-h-screen flex-col bg-background">
+       <GiftHeader />
+-      <main className="pb-16">
++      <main className="flex-1 pb-16">
+         {isPending || !data ? (
+           <ArticleSkeleton />
+         ) : !isRefusal(data) ? (
+-          <ArticleView article={data} search={search} />
++          <ArticleView article={data} />
+         ) : data.error === "unavailable" ? (
+           <UnavailableView onRetry={() => refetch()} retrying={isFetching} />
+         ) : data.error === "unknown" ? (
+-          <RefusalView error="unknown" search={search} />
++          <RefusalView error="unknown" />
+         ) : (
+-          <RefusalView error={data.error} language={data.language} search={search} />
++          <RefusalView error={data.error} language={data.language} />
+         )}
+       </main>
++      {bar && <SubscribeBar search={search} language={bar.language} />}
+     </div>
+   );
+ }
+ 
+-function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
++function ArticleView({ article }: { article: GiftArticle }) {
+   const { edition } = useReader();
+   // Habillage dans la langue de l'article : en, fr (fr.lexpress.eu) ou pl. Le lecteur France ne change pas.
+   const t = readerCopy(edition, article.language);
+@@ -113,7 +119,8 @@
+         {hasBody ? (
+           <div lang={article.language} className="article-body mt-8">
+             {body.split(/\n{2,}/).map((paragraph, index) => {
+-              const html = sanitizeBodyHtml(paragraph);
++              // Liens vers lexpress.fr / lexpress.eu retirés, texte gardé : aucune navigation interne.
++              const html = unlinkInternalLinks(sanitizeBodyHtml(paragraph));
+               const Tag = /<(?:p|h2|h3|ul|ol|blockquote|figure)\b/i.test(html) ? "div" : "p";
+               return <Tag key={index} dangerouslySetInnerHTML={{ __html: html }} />;
+             })}
+@@ -130,17 +137,16 @@
+         )}
+ 
+         <div className="mt-12 border-t border-rule pt-8">
+-          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
++          <p className="text-sm leading-relaxed text-muted-foreground">
+             {t.gifted}
+           </p>
+-          <SubscribeButton search={search} language={article.language} />
+         </div>
+       </div>
+     </article>
+   );
+ }
+ 
+-function RefusalView({ error, language, search }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage; search: string }) {
++function RefusalView({ error, language }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage }) {
+   const t = readerCopy(useReader().edition, language);
+   return (
+     <div className="measure px-5 pt-20">
+@@ -150,9 +156,6 @@
+       <p className="mt-3 text-base leading-relaxed text-muted-foreground">
+         {t.limited}
+       </p>
+-      <div className="mt-8">
+-        <SubscribeButton search={search} language={language} />
+-      </div>
+     </div>
+   );
+ }
