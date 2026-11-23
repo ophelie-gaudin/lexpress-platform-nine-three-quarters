@@ -51,7 +51,9 @@ Le site se déduit de l’édition et de la langue de l’article déjà rendues
 Règles :
 
 - **Un seul appel par affichage**, une fois la réponse de lecture reçue, avec un délai de
-  4 secondes au plus. Pas de réessai. Cet appel ne compte aucune lecture.
+  4 secondes au plus. Pas de réessai. Cet appel ne compte aucune lecture. Ne réutilise pas
+  la réponse obtenue pour un autre article (clé de cache : environnement, site **et jeton**) :
+  un article ouvert après le début d’une offre doit la voir.
 - Tant que l’appel n’a pas répondu (4 s au plus), n’affiche pas encore la barre : pas de
   libellé qui change sous les yeux du lecteur.
 - **Vérifie la réponse avant de l’utiliser**, sinon ignore l’offre entière : exactement une
@@ -92,7 +94,9 @@ Dans le corps de l’article, après l’assainissement HTML existant (garde-le 
 les liens qui mènent vers L’Express **en gardant leur texte** (et son gras, son italique) :
 tout lien vers `lexpress.fr`, `lexpress.eu` ou l’un de leurs sous-domaines, quelle que soit la
 casse, ainsi que les liens relatifs, les ancres `#…`, les liens `//…` sans protocole et tout
-ce qui n’est pas une adresse `http(s)://` absolue lisible. N’ajoute aucun bloc « Pour aller
+ce qui n’est pas une adresse `http(s)://` absolue lisible. Lis la vraie valeur de l’attribut
+`href` (le premier, comme le navigateur), jamais un texte qui lui ressemble dans un autre
+attribut (`title="… href=…"`) ; une balise illisible (guillemet non fermé) est retirée aussi. N’ajoute aucun bloc « Pour aller
 plus loin ». Les liens vers d’autres sites (rapport, PDF officiel…) restent cliquables, comme
 aujourd’hui. Le lien « Lire la suite » de l’aperçu n’est pas dans le corps : il reste.
 

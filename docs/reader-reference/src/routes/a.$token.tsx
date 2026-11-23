@@ -67,7 +67,7 @@ export function GiftArticleContent({ token }: { token: string }) {
           <RefusalView error={data.error} language={data.language} />
         )}
       </main>
-      {bar && <SubscribeBar search={search} language={bar.language} />}
+      {bar && <SubscribeBar token={token} search={search} language={bar.language} />}
     </div>
   );
 }

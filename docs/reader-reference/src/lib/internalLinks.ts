@@ -30,21 +30,45 @@ export function keepsLink(href: string | null | undefined): boolean {
   }
 }
 
-const ATTRIBUTES = String.raw`((?:[^>"']|"[^"]*"|'[^']*')*)`;
-const ANCHOR = new RegExp(String.raw`<a\b${ATTRIBUTES}>([\s\S]*?)<\/a\s*>`, "gi");
-const OPENING = new RegExp(String.raw`<a\b${ATTRIBUTES}>`, "gi");
-const HREF = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+// Une balise <a …> ou </a>, guillemets compris : un « > » entre guillemets ne la coupe pas.
+const TAG = /<(\/?)a\b((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/gi;
+// Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 
+/** Le href que le navigateur suivrait : le premier attribut href, null s'il n'y en a pas. */
 function hrefOf(attributes: string): string | null {
-  const match = HREF.exec(attributes);
-  return match ? (match[1] ?? match[2] ?? match[3] ?? null) : null;
+  for (const match of attributes.matchAll(ATTRIBUTE)) {
+    if (match[1]?.toLowerCase() === "href") return match[2] ?? match[3] ?? match[4] ?? "";
+  }
+  return null;
 }
 
 /** Retire les liens internes d'un fragment HTML déjà assaini, en gardant leur texte. */
 export function unlinkInternalLinks(html: string): string {
-  const paired = html.replace(ANCHOR, (whole: string, attributes: string, inner: string) => (keepsLink(hrefOf(attributes)) ? whole : inner));
-  // Une balise ouvrante sans fermeture ferait un lien jusqu'à la fin du paragraphe : elle part aussi.
-  const opened = paired.replace(OPENING, (tag: string, attributes: string) => (keepsLink(hrefOf(attributes)) ? tag : ""));
-  // Dernier filet : une balise mal formée (guillemet non fermé) que les deux passes n'ont pas reconnue.
-  return opened.replace(/<a\b[^>]*>?/gi, (tag: string) => (keepsLink(hrefOf(tag.slice(2))) ? tag : ""));
+  let out = "";
+  let from = 0;
+  // Les liens ne s'imbriquent pas en HTML : la fermeture suivante clôt le lien ouvert.
+  let open: "kept" | "removed" | null = null;
+  TAG.lastIndex = 0;
+  for (let match = TAG.exec(html); match; match = TAG.exec(html)) {
+    out += html.slice(from, match.index);
+    const [tag, closing, attributes = "", end] = match;
+    if (!end) {
+      // Balise mal formée (guillemet non fermé…) : le href est illisible, la balise part jusqu'au prochain « > ».
+      const next = html.indexOf(">", match.index + tag.length);
+      from = next === -1 ? html.length : next + 1;
+      TAG.lastIndex = from;
+      if (!closing) open = "removed";
+      continue;
+    }
+    from = match.index + tag.length;
+    if (closing) {
+      if (open === "kept") out += tag;
+      open = null;
+    } else {
+      open = keepsLink(hrefOf(attributes)) ? "kept" : "removed";
+      if (open === "kept") out += tag;
+    }
+  }
+  return out + html.slice(from);
 }
