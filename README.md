@@ -15,6 +15,7 @@ le peuvent tout autant.
 | --- | --- |
 | **un lien, tout de suite, sans terminal** — coller une adresse dans une page et recevoir un lien | **[l'interface web](interface/README.md)** |
 | **offrir des articles depuis votre service** — appeler l’API depuis une chaîne n8n, une newsletter, un outil interne | **Partie I**, ci-dessous |
+| **changer l’offre du bouton « S'abonner »** — marketing, pour une période donnée | **[Partie I, « L’offre d’abonnement du moment »](#loffre-dabonnement-du-moment-marketing)** |
 | **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
 L’interface web demande une clé d’accès partagée, puis votre jeton — qu’elle scelle dans un cookie
@@ -277,6 +278,162 @@ déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec 
 savoir combien de fois vos liens ont été lus, ou lesquels vous avez créés, demandez-le à la personne
 responsable du service — les deux vues existent, elles sont décrites en Partie II.
 
+## L’offre d’abonnement du moment (marketing)
+
+La page de lecture n’a qu’**une barre « S'abonner », collée en bas de l’écran**. Par défaut,
+chaque site garde son texte et son lien, dans sa langue :
+
+| Site | Texte par défaut | Lien par défaut |
+| --- | --- | --- |
+| `www.lexpress.fr` | S'abonner à L'Express | https://abonnements-digitaux.lexpress.fr/offres |
+| `www.lexpress.eu` | Subscribe | https://www.lexpress.eu/subscribe/ |
+| `fr.lexpress.eu` | S'abonner | https://fr.lexpress.eu/abonnement/ |
+| `pl.lexpress.eu` | Subskrypcja | https://pl.lexpress.eu/subskrypcja/ |
+
+Le site est celui de l’article offert : un article de pl.lexpress.eu, lu sur
+articles.lexpress.eu, prend l’offre de `pl.lexpress.eu`.
+
+Le marketing peut y mettre **l’offre du moment** (Black Friday, rentrée…) pour une période
+donnée, par l’API, sans publication de la page. Hors offre, ou si la lecture de l’offre
+échoue, la page garde son bouton par défaut — jamais un bouton cassé.
+
+### Le jeton
+
+Le même modèle de jeton par service que pour créer des liens (en-tête
+`x-gift-service-token`), mais **avec un droit en plus** : un jeton existant ne peut pas
+gérer les offres. Demander un jeton « offres » à la personne en charge du service (voir
+« Demander un accès »). Sans ce droit, l’API répond `403`.
+
+Adresse : `https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers`
+
+### Créer une offre
+
+```sh
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers' \
+  -H 'x-gift-service-token: VOTRE_JETON' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "sites": ["www.lexpress.fr"],
+        "starts_at": "2026-11-27T00:00:00+01:00",
+        "ends_at": "2026-12-01T23:59:00+01:00",
+        "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329",
+        "label": "Black Friday : -50 %",
+        "name": "black-friday-2026-fr"
+      }' \
+  | python3 -m json.tool
+```
+
+| Champ | Obligatoire | Règle | Par défaut |
+| --- | --- | --- | --- |
+| `sites` | **oui** | un à quatre parmi `www.lexpress.fr`, `www.lexpress.eu`, `fr.lexpress.eu`, `pl.lexpress.eu` | — |
+| `ends_at` | **oui** | date ISO 8601 **avec fuseau** (`+01:00` ou `Z`), dans le futur, après `starts_at` | — |
+| `starts_at` | non | même format | maintenant |
+| `url` | non | `https://` sur `abonnements-digitaux.lexpress.fr`, `lexpress.fr`, `www.lexpress.fr`, `lexpress.eu`, `www.lexpress.eu`, `fr.lexpress.eu` ou `pl.lexpress.eu`, **du domaine de chaque site visé** ; sans port ni espace ; 500 caractères au plus | le lien par défaut de chaque site |
+| `label` | non | 1 à 40 caractères, une ligne, sans `<` `>` ; **tous les sites visés doivent être de la même langue** | le texte par défaut de chaque site, dans sa langue |
+| `name` | non | nom interne, pour s’y retrouver dans la liste ; 80 caractères au plus | — |
+
+Toute autre clé est refusée. Une offre pour la France et l’Europe à la fois n’a pas de lien
+commun : en créer deux. De même, une offre `www.lexpress.eu` + `pl.lexpress.eu` peut avoir un
+lien commun mais pas un libellé commun (anglais et polonais) : sans libellé, chaque site garde
+le sien.
+
+Réponse `201` (valeurs fictives) :
+
+```json
+{
+  "offer": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "black-friday-2026-fr",
+    "sites": ["www.lexpress.fr"],
+    "starts_at": "2026-11-26T23:00:00+00:00",
+    "ends_at": "2026-12-01T22:59:00+00:00",
+    "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329",
+    "label": "Black Friday : -50 %",
+    "status": "scheduled"
+  },
+  "client": "marketing-offres"
+}
+```
+
+`status` vaut `scheduled` (à venir), `active` (affichée selon la règle ci-dessous) ou `ended`.
+**Garder `id`** : c’est lui qui permet de terminer l’offre.
+
+### Plusieurs offres en même temps
+
+Si plusieurs offres sont en cours pour un même site, **la plus récemment commencée
+s’affiche** ; à début égal, la plus récemment créée. Une offre flash de deux jours posée
+pendant une offre d’un mois s’affiche donc pendant ses deux jours, puis l’offre du mois
+reprend toute seule.
+
+### Lister les offres
+
+```sh
+curl --silent 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers' \
+  -H 'x-gift-service-token: VOTRE_JETON' | python3 -m json.tool
+```
+
+La réponse donne les offres à venir, en cours et terminées depuis moins de 30 jours
+(`offers`), et pour chaque site l’offre affichée **en ce moment** (`displayed_now`, `null` =
+bouton par défaut) :
+
+```json
+{
+  "offers": [ … ],
+  "displayed_now": {
+    "www.lexpress.fr": "00000000-0000-4000-8000-000000000001",
+    "www.lexpress.eu": null, "fr.lexpress.eu": null, "pl.lexpress.eu": null
+  },
+  "client": "marketing-offres"
+}
+```
+
+### Terminer une offre avant sa date de fin
+
+```sh
+curl --silent -X DELETE \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers?id=00000000-0000-4000-8000-000000000001' \
+  -H 'x-gift-service-token: VOTRE_JETON' | python3 -m json.tool
+```
+
+`result` dit ce qui s’est passé : `deleted` (l’offre n’avait pas commencé, elle est
+supprimée), `ended` (elle était en cours, elle se termine maintenant et le bouton par défaut
+revient), `already_ended` (rien à faire). Pour **modifier** une offre : la terminer, puis en
+créer une nouvelle.
+
+| HTTP | Sens |
+| --- | --- |
+| 201 | offre créée |
+| 400 | champ invalide — le message dit lequel et pourquoi |
+| 401 | jeton absent, inconnu ou révoqué |
+| 403 | jeton valide, mais sans le droit de gérer les offres |
+| 404 | `DELETE` : offre inconnue |
+| 405 | méthode autre que GET, POST, DELETE |
+| 503 | base indisponible, réessayer |
+
+La page lit l’offre à l’affichage : une offre créée est visible dès la page suivante, une
+offre terminée disparaît de même.
+
+### Suivi des clics sur « S'abonner » (UTM)
+
+Rien à faire côté offre : **le bouton reprend les paramètres de suivi de l’URL du lien
+offert**. Tout paramètre `at_*` (`at_medium`, `at_campaign`, `at_campaign_group`…) et `s`
+(identifiant d’envoi) présents dans l’adresse ouverte par le lecteur sont recopiés sur le lien
+du bouton ; rien d’autre (`utm_source`, `refTarif`, `redirect`… sont écartés).
+
+Avec une offre, **ces paramètres s’ajoutent à l’URL de l’offre**, qui garde les siens. Si
+le même paramètre est des deux côtés, celui du lecteur l’emporte.
+
+```text
+lien diffusé   https://articles.lexpress.fr/a/<token>?s=<envoi>&at_medium=Newsletter&at_campaign=bf
+offre          https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329
+bouton         https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329&s=<envoi>&at_medium=Newsletter&at_campaign=bf
+```
+
+Pour suivre une campagne, poser donc ses `at_*` sur **le lien diffusé** (voir « Règles
+importantes pour les intégrateurs »), pas dans l’URL de l’offre : un `at_*` mis dans l’offre
+serait commun à toutes les campagnes, et remplacé par celui du lecteur s’il en a un.
+
 # Partie II — Reprendre le service
 
 Cette partie suppose les accès au projet Supabase, au projet Lovable qui héberge la page de lecture,
@@ -349,6 +506,9 @@ Il existe une seule page dynamique de lecture, pas une page à générer par art
 | `validate-interface.mjs` | Tests de l'interface — dont « sans session, le service n'est pas appelé » |
 | `interface/README.md` | Déploiement Vercel, variables, révocation |
 | `docs/frontend.md` | Contrat à respecter par la page Lovable |
+| `gift-links/supabase/018-offres-abonnement.sql` | Offres d’abonnement : table, droit `manage_offers`, RPC publique `get_subscription_offer` |
+| `gift-links/functions/subscription-offers/index.ts` | API des offres : créer, lister, terminer |
+| `validate-subscription-offers.mjs`, `validate-reader-offers.mjs` | Tests des offres et de la barre du lecteur |
 
 ## État connu au 8 octobre 2026
 
@@ -487,6 +647,22 @@ SELECT public.revoke_api_client('newsletter-quotidienne');  -- rend true, ou fal
 
 La ligne **reste en base** : on garde la trace de ce que ce service a créé, et les liens qu’il a fabriqués continuent de fonctionner. Révoquer ferme la porte, cela n’efface pas l’histoire. Les autres services ne sont pas affectés — c’est tout l’intérêt d’un jeton par appelant.
 
+### Donner le droit de gérer les offres
+
+Un jeton ne gère les offres d’abonnement que si on le lui accorde. Créer d’abord un jeton
+dédié (par exemple `marketing-offres`, procédure ci-dessus), puis :
+
+```sql
+UPDATE public.api_clients SET manage_offers = true  WHERE name = 'marketing-offres';  -- accorder
+UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-offres';  -- retirer
+```
+
+Ne pas l’accorder aux jetons qui créent des liens (agent WhatsApp, newsletter) : un jeton
+fuité changerait le bouton de toutes les pages. Les offres sont lisibles en SQL dans
+`public.subscription_offers` ; la page, elle, ne voit que `get_subscription_offer` (libellé,
+URL, date de fin de l’offre en cours). Déploiement et retour arrière :
+[docs/implementation/offres-abonnement-20261123.md](docs/implementation/offres-abonnement-20261123.md).
+
 ### Savoir qui a fait quoi
 
 Chaque lien porte le service qui l’a créé et le dernier qui en a repoussé la date de fin.
@@ -590,6 +766,7 @@ Utiliser un projet Supabase dédié. Appliquer **les douze fichiers de `gift-lin
 | `010-vues-security-invoker.sql` | les vues lisent avec les droits de qui les interroge |
 | `011-ne-jamais-degrader.sql` | un repli n'écrase plus un corps déjà diffusé ; la date de fin ne peut que croître |
 | `012-retention.sql` | la purge : ce qu'on garde, et combien de temps |
+| `018-offres-abonnement.sql` | les offres d’abonnement du moment, gérées par l’API `subscription-offers` |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
