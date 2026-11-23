@@ -7,8 +7,9 @@ import { useEffect } from "react";
 import { sendPageDisplay } from "@/lib/piano";
 
 import { GiftHeader } from "@/components/GiftHeader";
-import { SubscribeButton } from "@/components/SubscribeButton";
+import { SubscribeBar } from "@/components/SubscribeButton";
 import { sanitizeBodyHtml } from "@/lib/bodyHtml";
+import { unlinkInternalLinks } from "@/lib/internalLinks";
 import { getGiftArticle, isRefusal, type GiftArticle } from "@/lib/giftArticle";
 
 export const Route = createFileRoute("/a/$token")({
@@ -46,27 +47,32 @@ export function GiftArticleContent({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, pianoState, reader.edition, reader.environment]);
 
+  // Une seule barre d'abonnement, en bas de l'écran, sur l'article comme sur un refus. Pas pendant le
+  // chargement ni sur une panne technique : il n'y a encore rien à proposer, et la langue est inconnue.
+  const bar = !data || (isRefusal(data) && data.error === "unavailable") ? null : { language: data.language };
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <GiftHeader />
-      <main className="pb-16">
+      <main className="flex-1 pb-16">
         {isPending || !data ? (
           <ArticleSkeleton />
         ) : !isRefusal(data) ? (
-          <ArticleView article={data} search={search} />
+          <ArticleView article={data} />
         ) : data.error === "unavailable" ? (
           <UnavailableView onRetry={() => refetch()} retrying={isFetching} />
         ) : data.error === "unknown" ? (
-          <RefusalView error="unknown" search={search} />
+          <RefusalView error="unknown" />
         ) : (
-          <RefusalView error={data.error} language={data.language} search={search} />
+          <RefusalView error={data.error} language={data.language} />
         )}
       </main>
+      {bar && <SubscribeBar search={search} language={bar.language} />}
     </div>
   );
 }
 
-function ArticleView({ article, search }: { article: GiftArticle; search: string }) {
+function ArticleView({ article }: { article: GiftArticle }) {
   const { edition } = useReader();
   // Habillage dans la langue de l'article : en, fr (fr.lexpress.eu) ou pl. Le lecteur France ne change pas.
   const t = readerCopy(edition, article.language);
@@ -113,7 +119,8 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
         {hasBody ? (
           <div lang={article.language} className="article-body mt-8">
             {body.split(/\n{2,}/).map((paragraph, index) => {
-              const html = sanitizeBodyHtml(paragraph);
+              // Liens vers lexpress.fr / lexpress.eu retirés, texte gardé : aucune navigation interne.
+              const html = unlinkInternalLinks(sanitizeBodyHtml(paragraph));
               const Tag = /<(?:p|h2|h3|ul|ol|blockquote|figure)\b/i.test(html) ? "div" : "p";
               return <Tag key={index} dangerouslySetInnerHTML={{ __html: html }} />;
             })}
@@ -130,17 +137,16 @@ function ArticleView({ article, search }: { article: GiftArticle; search: string
         )}
 
         <div className="mt-12 border-t border-rule pt-8">
-          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {t.gifted}
           </p>
-          <SubscribeButton search={search} language={article.language} />
         </div>
       </div>
     </article>
   );
 }
 
-function RefusalView({ error, language, search }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage; search: string }) {
+function RefusalView({ error, language }: { error: "expired" | "withdrawn" | "unknown"; language?: ArticleLanguage }) {
   const t = readerCopy(useReader().edition, language);
   return (
     <div className="measure px-5 pt-20">
@@ -150,9 +156,6 @@ function RefusalView({ error, language, search }: { error: "expired" | "withdraw
       <p className="mt-3 text-base leading-relaxed text-muted-foreground">
         {t.limited}
       </p>
-      <div className="mt-8">
-        <SubscribeButton search={search} language={language} />
-      </div>
     </div>
   );
 }
