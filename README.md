@@ -319,7 +319,8 @@ curl --silent -X POST \
         "ends_at": "2026-12-01T23:59:00+01:00",
         "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329",
         "label": "Black Friday : -50 %",
-        "name": "black-friday-2026-fr"
+        "name": "black-friday-2026-fr",
+        "request_id": "black-friday-2026-fr-1"
       }' \
   | python3 -m json.tool
 ```
@@ -332,6 +333,12 @@ curl --silent -X POST \
 | `url` | non | `https://` sur `abonnements-digitaux.lexpress.fr`, `lexpress.fr`, `www.lexpress.fr`, `lexpress.eu`, `www.lexpress.eu`, `fr.lexpress.eu` ou `pl.lexpress.eu`, **du domaine de chaque site visé** ; sans port ni espace ; 500 caractères au plus | le lien par défaut de chaque site |
 | `label` | non | 1 à 40 caractères, une ligne, sans `<` `>` ; **tous les sites visés doivent être de la même langue** | le texte par défaut de chaque site, dans sa langue |
 | `name` | non | nom interne, pour s’y retrouver dans la liste ; 80 caractères au plus | — |
+| `request_id` | non, **recommandé** | clé choisie par vous, 1 à 100 caractères (lettres, chiffres, `. _ : -`) | — |
+
+**Toujours envoyer un `request_id`.** Si la réponse se perd (coupure, délai) et que vous renvoyez
+la même requête, le service rend l’offre déjà créée au lieu d’en créer une seconde. Sans lui, un
+renvoi crée un doublon : en terminant la seule offre dont vous connaissez l’`id`, l’autre resterait
+affichée. Réutiliser un `request_id` pour une demande différente est refusé (`400`).
 
 Toute autre clé est refusée. Une offre pour la France et l’Europe à la fois n’a pas de lien
 commun : en créer deux. De même, une offre `www.lexpress.eu` + `pl.lexpress.eu` peut avoir un
@@ -362,7 +369,7 @@ Réponse `201` (valeurs fictives) :
 ### Plusieurs offres en même temps
 
 Si plusieurs offres sont en cours pour un même site, **la plus récemment commencée
-s’affiche** ; à début égal, la plus récemment créée. Une offre flash de deux jours posée
+s’affiche** ; à début égal, la plus récemment créée (à la microseconde, puis l’`id`). Une offre flash de deux jours posée
 pendant une offre d’un mois s’affiche donc pendant ses deux jours, puis l’offre du mois
 reprend toute seule.
 
@@ -374,8 +381,9 @@ curl --silent 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscriptio
 ```
 
 La réponse donne les offres à venir, en cours et terminées depuis moins de 30 jours
-(`offers`), et pour chaque site l’offre affichée **en ce moment** (`displayed_now`, `null` =
-bouton par défaut) :
+(`offers`, 500 au plus, offres en cours d’abord ; `truncated: true` si la limite est atteinte), et
+pour chaque site l’offre affichée **en ce moment** (`displayed_now`, `null` = bouton par défaut),
+calculée par la même règle que la page :
 
 ```json
 {
@@ -384,6 +392,7 @@ bouton par défaut) :
     "www.lexpress.fr": "00000000-0000-4000-8000-000000000001",
     "www.lexpress.eu": null, "fr.lexpress.eu": null, "pl.lexpress.eu": null
   },
+  "truncated": false,
   "client": "marketing-offres"
 }
 ```
@@ -467,7 +476,7 @@ npm run build
 
 Les tests exécutent le SQL dans une base PostgreSQL embarquée (PGlite) et simulent les appels Arc et les pages publiques. Ils ne nécessitent aucun secret, n’appellent aucun service de production et n’envoient aucun message. Ils comptent actuellement 170 vérifications du schéma, 198 du traitement des articles et 217 de l’interface web.
 
-Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit `gift-links/functions/create-gift-links/index.bundle.ts`, le fichier déployable. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
+Le test API importe le générateur, qui régénère aussi le bundle local. `npm run build` produit les fichiers déployables `gift-links/functions/create-gift-links/index.bundle.ts` et `gift-links/functions/subscription-offers/index.bundle.ts` ; après une modification de `_shared/`, redéployer chaque fonction qui l’embarque. Ne pas le modifier à la main. Aucun de ces scripts ne déploie.
 
 ## Architecture et périmètre
 

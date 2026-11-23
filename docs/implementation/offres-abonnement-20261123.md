@@ -49,7 +49,11 @@ d’Ophélie.
 - **Droit séparé `manage_offers`** (proposé, optionnel). Le même modèle de jeton par service,
   mais un jeton existant (agent WhatsApp, newsletter…) ne peut pas changer le bouton de
   toutes les pages. Le droit s’accorde à la main, jeton par jeton.
-- **Fin anticipée** : une offre pas encore commencée est supprimée (personne ne l’a vue) ;
+- **Une seule fonction de sélection** (`current_subscription_offer_id`) sert la page et la liste
+  du marketing (`displayed_now`), à la microseconde : jamais deux réponses différentes.
+- **Rejeu sans doublon** : `request_id` (recommandé) rend l’offre déjà créée si une requête est
+  renvoyée après une réponse perdue ; réutilisé pour une autre demande, il est refusé.
+- **Fin anticipée** : une offre pas encore commencée (ou commencée à l’instant même) est supprimée ;
   une offre en cours se termine maintenant, la ligne reste avec qui l’a terminée.
 - **Exposition publique minimale** : `get_subscription_offer(p_site)` ne rend que `label`,
   `url`, `ends_at`, au plus une ligne. Table en RLS sans politique, aucun droit `anon` ni
@@ -170,7 +174,10 @@ dépendre du patch.
 - **Lecteur** : restaurer la publication Lovable capturée avant intervention. Sans risque
   pour les données.
 - **Couper une offre** sans rien retirer : `DELETE` de l’API (README), ou
-  `UPDATE public.subscription_offers SET ends_at = now() WHERE id = '<id>' AND ends_at > now();`
+  en SQL, selon l’état de l’offre :
+  `UPDATE public.subscription_offers SET ends_at = now(), ended_at = now() WHERE id = '<id>' AND starts_at < now() AND ends_at > now();`
+  (en cours) ou `DELETE FROM public.subscription_offers WHERE id = '<id>' AND starts_at >= now();`
+  (pas encore commencée : `ends_at = now()` y serait refusé, la fin devant suivre le début).
 - **Couper le marketing** : `UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-offres';`
 - **Fonction** : la supprimer dans le tableau de bord (Edge Functions → `subscription-offers`
   → Delete). Aucune autre fonction n’en dépend.
