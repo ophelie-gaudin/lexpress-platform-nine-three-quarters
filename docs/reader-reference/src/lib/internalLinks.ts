@@ -19,7 +19,10 @@ function decodeEntities(value: string): string {
 /** Vrai seulement pour un lien http(s) absolu vers un site qui n'est pas L'Express. */
 export function keepsLink(href: string | null | undefined): boolean {
   if (!href) return false;
-  const value = decodeEntities(href).trim();
+  // Comme le navigateur : seuls les espaces et caractères de contrôle ASCII sont retirés aux extrémités.
+  // trim() retirerait aussi une espace insécable, que le navigateur garde : le lien deviendrait relatif,
+  // donc interne, alors qu'on le croirait externe.
+  const value = decodeEntities(href).replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
   if (!/^https?:\/\//i.test(value.replace(/[\u0000- ]/g, ""))) return false;
   try {
     const url = new URL(value);
@@ -34,7 +37,8 @@ export function keepsLink(href: string | null | undefined): boolean {
 // image…) ne compte jamais comme une balise. Seules les balises a sont modifiées ; les autres passent telles quelles.
 const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
 // Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
-const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+// Valeur sans guillemets : jusqu'au prochain espace ou « > », comme le navigateur (un « = » en fait partie).
+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
 
 /** Le href que le navigateur suivrait : le premier attribut href, null s'il n'y en a pas. */
 function hrefOf(attributes: string): string | null {
