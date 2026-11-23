@@ -58,7 +58,7 @@
  }
 --- /dev/null
 +++ b/src/lib/internalLinks.ts
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,79 @@
 +// Liens du corps d'article (retour d'Enzo du 20/11, point 6) : aucune navigation interne.
 +// Un lien vers lexpress.fr ou lexpress.eu mène au mur d'abonnement ; on garde son texte, on retire le lien.
 +// Seul un lien http(s) absolu vers un autre site reste cliquable (un rapport, un PDF officiel…).
@@ -80,7 +80,10 @@
 +/** Vrai seulement pour un lien http(s) absolu vers un site qui n'est pas L'Express. */
 +export function keepsLink(href: string | null | undefined): boolean {
 +  if (!href) return false;
-+  const value = decodeEntities(href).trim();
++  // Comme le navigateur : seuls les espaces et caractères de contrôle ASCII sont retirés aux extrémités.
++  // trim() retirerait aussi une espace insécable, que le navigateur garde : le lien deviendrait relatif,
++  // donc interne, alors qu'on le croirait externe.
++  const value = decodeEntities(href).replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
 +  if (!/^https?:\/\//i.test(value.replace(/[\u0000- ]/g, ""))) return false;
 +  try {
 +    const url = new URL(value);
@@ -95,7 +98,8 @@
 +// image…) ne compte jamais comme une balise. Seules les balises a sont modifiées ; les autres passent telles quelles.
 +const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
 +// Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
-+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
++// Valeur sans guillemets : jusqu'au prochain espace ou « > », comme le navigateur (un « = » en fait partie).
++const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
 +
 +/** Le href que le navigateur suivrait : le premier attribut href, null s'il n'y en a pas. */
 +function hrefOf(attributes: string): string | null {
@@ -136,7 +140,7 @@
 +}
 --- a/src/lib/subscriptionLink.ts
 +++ b/src/lib/subscriptionLink.ts
-@@ -1,5 +1,6 @@
+@@ -1,24 +1,44 @@
  import { articleActions, type ArticleLanguage } from "./articleLanguage.ts";
 -import { editions, type Edition } from "./edition.ts";
 +import { copy, editions, type Edition } from "./edition.ts";
@@ -144,8 +148,11 @@
  
  /**
   * Builds the subscription URL from the visitor's own link.
-@@ -9,10 +10,13 @@
-  * anyone inject their own dimensions into Piano. `set` is used, never `append`,
+  *
+  * Whitelist only: parameters named `at_*` plus `s`. Nothing else is forwarded —
+  * a gifted link is public and gets forwarded, so copying everything would let
+- * anyone inject their own dimensions into Piano. `set` is used, never `append`,
++ * anyone inject their own dimensions into Piano. One value per key, never two,
   * so a parameter repeated in the link keeps a single value. A parameter that is
   * absent stays absent: no defaults, no fallback, no fabricated tracking.
 + *
@@ -153,16 +160,30 @@
 + * its own parameters (promo code…) are kept, and an `at_*` of the visitor wins.
   */
 -export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage): string {
-+export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage, offerUrl?: string | null): string {
-   const incoming = new URLSearchParams(search ?? "");
+-  const incoming = new URLSearchParams(search ?? "");
 -  const url = new URL(language ? articleActions(edition, language).subscription : editions[edition].subscription);
+-
+-  for (const [key, value] of incoming) {
+-    if (value && (key.startsWith("at_") || key === "s")) {
+-      url.searchParams.set(key, value);
+-    }
++export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", language?: ArticleLanguage, offerUrl?: string | null): string {
 +  const url = new URL(offerUrl ?? (language ? articleActions(edition, language).subscription : editions[edition].subscription));
- 
-   for (const [key, value] of incoming) {
-     if (value && (key.startsWith("at_") || key === "s")) {
-@@ -21,4 +25,13 @@
++  const forwarded = new Map<string, string>();
++  for (const [key, value] of new URLSearchParams(search ?? "")) {
++    if (value && (key.startsWith("at_") || key === "s")) forwarded.set(key, value);
    }
++  if (forwarded.size === 0) return url.toString();
  
++  // The offer's own query is kept byte for byte (a promo code stays encoded as written); only the
++  // forwarded keys are replaced, then appended. searchParams.set would re-encode the whole query.
++  const keyOf = (segment: string) => {
++    const raw = segment.split("=")[0] ?? "";
++    try { return decodeURIComponent(raw.replace(/\+/g, " ")); } catch { return raw; }
++  };
++  const kept = url.search.slice(1).split("&").filter((segment) => segment !== "" && !forwarded.has(keyOf(segment)));
++  const added = [...forwarded].map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
++  url.search = [...kept, ...added].join("&");
    return url.toString();
 +}
 +
