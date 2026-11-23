@@ -9,7 +9,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // s'explique, champ par champ, au lieu d'une erreur PostgreSQL. Les deux règles disent la même chose ;
 // le test les confronte sur les mêmes cas.
 
-const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name']);
+const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id']);
 const OFFRE_SITES = Object.freeze({
   'www.lexpress.fr': Object.freeze({ famille: 'fr', langue: 'fr' }),
   'www.lexpress.eu': Object.freeze({ famille: 'eu', langue: 'en' }),
@@ -31,10 +31,18 @@ function familleUrl(url) {
 
 // ISO 8601 avec fuseau explicite : « 2026-11-30T23:59:00+01:00 » ou « …Z ». Sans fuseau, la même
 // chaîne désigne deux instants selon la machine qui la lit ; on préfère refuser que deviner.
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?(Z|[+-](\d{2}):(\d{2}))$/;
 function date(valeur, champ) {
-  if (typeof valeur !== 'string' || !ISO.test(valeur)) {
+  const m = typeof valeur === 'string' ? ISO.exec(valeur) : null;
+  if (!m) {
     return { erreur: `${champ} doit être une date ISO 8601 avec fuseau, par exemple 2026-11-30T23:59:00+01:00 (reçu : ${JSON.stringify(valeur)})` };
+  }
+  // Le calendrier d'abord : Date.parse transforme un 31 novembre en 1er décembre sans rien dire.
+  const [an, mois, jour, heure, minute, seconde] = [m[1], m[2], m[3], m[4], m[5], m[7] ?? '0'].map(Number);
+  const jours = new Date(Date.UTC(an, mois, 0)).getUTCDate();
+  if (mois < 1 || mois > 12 || jour < 1 || jour > jours || heure > 23 || minute > 59 || seconde > 59
+      || Number(m[10] ?? 0) > 23 || Number(m[11] ?? 0) > 59) {
+    return { erreur: `${champ} n'est pas une date du calendrier (reçu : ${JSON.stringify(valeur)})` };
   }
   const t = Date.parse(valeur);
   if (!Number.isFinite(t)) return { erreur: `${champ} n'est pas une date valide (reçu : ${JSON.stringify(valeur)})` };
@@ -104,6 +112,14 @@ function validerOffre(corps, maintenant = new Date()) {
     name = corps.name.trim();
   }
 
+  let requestId = null;
+  if (corps.request_id !== undefined && corps.request_id !== null) {
+    if (typeof corps.request_id !== 'string' || !/^[A-Za-z0-9._:-]{1,100}$/.test(corps.request_id)) {
+      return { erreur: 'request_id : 1 à 100 caractères parmi lettres, chiffres et . _ : -' };
+    }
+    requestId = corps.request_id;
+  }
+
   return {
     offre: {
       p_sites: [...sites],
@@ -112,6 +128,7 @@ function validerOffre(corps, maintenant = new Date()) {
       p_url: url,
       p_label: label,
       p_name: name,
+      p_request_id: requestId,
     },
   };
 }
@@ -131,23 +148,12 @@ function offrePublique(ligne, maintenant = new Date()) {
   };
 }
 
-// Pour chaque site, l'offre affichée en ce moment selon la règle de 018 (début le plus récent, puis
-// création la plus récente, puis identifiant). Sert la réponse de la liste ; la page, elle, demande à la base.
-function offresAffichees(lignes, maintenant = new Date()) {
-  const t = maintenant.getTime();
-  const enCours = lignes
-    .filter((l) => Date.parse(l.starts_at) <= t && Date.parse(l.ends_at) > t)
-    .sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at)
-      || Date.parse(b.created_at) - Date.parse(a.created_at)
-      || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-  return Object.fromEntries(Object.keys(OFFRE_SITES).map((site) => [site, enCours.find((l) => l.sites.includes(site))?.id ?? null]));
-}
-
 // /subscription-offers — l'offre d'abonnement du moment, déclarée par le marketing (migration 018).
 //
 //   GET                      liste : offres à venir, en cours, terminées depuis moins de 30 jours,
 //                            et pour chaque site l'offre affichée en ce moment
-//   POST   { sites, ends_at, starts_at?, url?, label?, name? }   crée une offre
+//   POST   { sites, ends_at, starts_at?, url?, label?, name?, request_id? }   crée une offre
+//                            (même request_id renvoyé = la même offre, jamais un doublon)
 //   DELETE ?id=<uuid>        fin anticipée : supprime une offre à venir, termine une offre en cours
 //
 // AUTHENTIFICATION : le même jeton par service que create-gift-links, dans `x-gift-service-token`.
@@ -212,8 +218,12 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     const { data, error } = await db.rpc('list_subscription_offers', { p_client_id: clientId });
     if (error) return refusBase(error, clientName, 'liste');
+    // L'offre affichée vient de la base, de la même fonction que la page : jamais recalculée ici.
+    const { data: affichees, error: erreurAffichees } = await db.rpc('displayed_subscription_offers', { p_client_id: clientId });
+    if (erreurAffichees) return refusBase(erreurAffichees, clientName, 'liste');
     const lignes = (data ?? []) as Array<Record<string, unknown>>;
-    return json({ offers: lignes.map((l) => offrePublique(l)), displayed_now: offresAffichees(lignes), client: clientName });
+    const displayed = Object.fromEntries(((affichees ?? []) as Array<{ site: string; id: string | null }>).map((a) => [a.site, a.id ?? null]));
+    return json({ offers: lignes.map((l) => offrePublique(l)), displayed_now: displayed, truncated: lignes.length >= 500, client: clientName });
   }
 
   if (req.method === 'DELETE') {

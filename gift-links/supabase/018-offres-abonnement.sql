@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS public.subscription_offers (
   created_at  timestamptz NOT NULL DEFAULT now(),
   ended_by    uuid REFERENCES public.api_clients(id),
   ended_at    timestamptz,
+  -- Clé de rejeu fournie par l'appelant : un POST renvoyé après une réponse perdue ne crée pas de doublon.
+  request_id  text CHECK (request_id IS NULL OR request_id ~ '^[A-Za-z0-9._:-]{1,100}$'),
   CONSTRAINT subscription_offers_dates CHECK (ends_at > starts_at),
   -- Un à quatre sites, tous connus, sans doublon.
   CONSTRAINT subscription_offers_sites CHECK (public.offer_sites_valid(sites)),
@@ -86,6 +88,8 @@ CREATE TABLE IF NOT EXISTS public.subscription_offers (
 COMMENT ON TABLE public.subscription_offers IS
   'Offres d''abonnement affichées dans la barre de la page de lecture. Écriture par la fonction subscription-offers seulement ; lecture publique par get_subscription_offer, trois champs.';
 CREATE INDEX IF NOT EXISTS subscription_offers_ends_at ON public.subscription_offers (ends_at);
+CREATE UNIQUE INDEX IF NOT EXISTS subscription_offers_request ON public.subscription_offers (created_by, request_id)
+  WHERE request_id IS NOT NULL;
 
 -- ── LES DROITS. Table fermée : RLS active, aucune politique, aucun droit public.
 ALTER TABLE public.subscription_offers ENABLE ROW LEVEL SECURITY;
@@ -93,15 +97,24 @@ REVOKE ALL ON public.subscription_offers FROM PUBLIC, anon, authenticated;
 
 -- ── LECTURE PUBLIQUE. Le strict nécessaire : libellé, URL, date de fin. Au plus une ligne.
 -- NULL dans libellé ou URL = la page garde son texte ou son lien par défaut, dans la langue du site.
-CREATE OR REPLACE FUNCTION public.get_subscription_offer(p_site text)
-RETURNS TABLE (label text, url text, ends_at timestamptz)
+-- LA règle de sélection, une seule fois : la page et la liste du marketing la lisent toutes deux ici,
+-- à la précision de PostgreSQL (la microseconde), jamais recalculée ailleurs.
+CREATE OR REPLACE FUNCTION public.current_subscription_offer_id(p_site text) RETURNS uuid
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
-  SELECT o.label, o.url, o.ends_at
+  SELECT o.id
     FROM public.subscription_offers o
    WHERE p_site = ANY (o.sites)
      AND o.starts_at <= now() AND o.ends_at > now()
    ORDER BY o.starts_at DESC, o.created_at DESC, o.id DESC
    LIMIT 1
+$f$;
+
+CREATE OR REPLACE FUNCTION public.get_subscription_offer(p_site text)
+RETURNS TABLE (label text, url text, ends_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+  SELECT o.label, o.url, o.ends_at
+    FROM public.subscription_offers o
+   WHERE o.id = public.current_subscription_offer_id(p_site)
 $f$;
 
 -- Contrôle de droit commun aux trois gestes d'écriture ou de liste.
@@ -115,12 +128,26 @@ END $f$;
 
 CREATE OR REPLACE FUNCTION public.create_subscription_offer(
   p_client_id uuid, p_sites text[], p_ends_at timestamptz,
-  p_starts_at timestamptz DEFAULT NULL, p_url text DEFAULT NULL, p_label text DEFAULT NULL, p_name text DEFAULT NULL)
+  p_starts_at timestamptz DEFAULT NULL, p_url text DEFAULT NULL, p_label text DEFAULT NULL, p_name text DEFAULT NULL,
+  p_request_id text DEFAULT NULL)
 RETURNS public.subscription_offers
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 DECLARE v public.subscription_offers;
 BEGIN
   PERFORM public.assert_offer_manager(p_client_id);
+  -- Rejeu : même clé, même demande → l'offre déjà créée, telle quelle. Même clé, autre demande → refus.
+  IF p_request_id IS NOT NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('subscription-offer:' || p_client_id || ':' || p_request_id, 0));
+    SELECT * INTO v FROM public.subscription_offers WHERE created_by = p_client_id AND request_id = p_request_id;
+    IF FOUND THEN
+      IF v.sites = p_sites AND v.ends_at = p_ends_at AND (p_starts_at IS NULL OR v.starts_at = p_starts_at)
+         AND v.url IS NOT DISTINCT FROM p_url AND v.label IS NOT DISTINCT FROM p_label
+         AND v.name IS NOT DISTINCT FROM NULLIF(btrim(p_name), '') THEN
+        RETURN v;
+      END IF;
+      RAISE EXCEPTION 'offres : request_id déjà utilisé pour une autre offre' USING ERRCODE = '22023';
+    END IF;
+  END IF;
   IF p_ends_at IS NULL OR p_ends_at <= now() THEN
     RAISE EXCEPTION 'offres : la date de fin doit être à venir' USING ERRCODE = '22023';
   END IF;
@@ -132,13 +159,14 @@ BEGIN
   IF p_label IS NOT NULL AND (SELECT count(DISTINCT public.offer_site_language(s)) FROM unnest(p_sites) s) > 1 THEN
     RAISE EXCEPTION 'offres : un libellé ne peut viser que des sites d''une même langue' USING ERRCODE = '22023';
   END IF;
-  INSERT INTO public.subscription_offers (name, sites, starts_at, ends_at, url, label, created_by)
-  VALUES (NULLIF(btrim(p_name), ''), p_sites, COALESCE(p_starts_at, now()), p_ends_at, p_url, p_label, p_client_id)
+  INSERT INTO public.subscription_offers (name, sites, starts_at, ends_at, url, label, created_by, request_id)
+  VALUES (NULLIF(btrim(p_name), ''), p_sites, COALESCE(p_starts_at, now()), p_ends_at, p_url, p_label, p_client_id, p_request_id)
   RETURNING * INTO v;
   RETURN v;
 END $f$;
 
--- Offres utiles au marketing : à venir, en cours, et terminées depuis moins de 30 jours.
+-- Offres utiles au marketing : à venir, en cours, et terminées depuis moins de 30 jours. 500 au plus,
+-- en cours d'abord : une liste tronquée ne cache jamais ce qui est affiché. La fonction le signale.
 CREATE OR REPLACE FUNCTION public.list_subscription_offers(p_client_id uuid)
 RETURNS SETOF public.subscription_offers
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
@@ -146,7 +174,18 @@ BEGIN
   PERFORM public.assert_offer_manager(p_client_id);
   RETURN QUERY SELECT * FROM public.subscription_offers
    WHERE ends_at > now() - interval '30 days'
-   ORDER BY starts_at DESC, created_at DESC, id DESC;
+   ORDER BY (starts_at <= now() AND ends_at > now()) DESC, (ends_at > now()) DESC, starts_at DESC, created_at DESC, id DESC
+   LIMIT 500;
+END $f$;
+
+-- Pour chaque site, l'offre affichée en ce moment : la même fonction que la page.
+CREATE OR REPLACE FUNCTION public.displayed_subscription_offers(p_client_id uuid)
+RETURNS TABLE (site text, id uuid)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+BEGIN
+  PERFORM public.assert_offer_manager(p_client_id);
+  RETURN QUERY SELECT s.site, public.current_subscription_offer_id(s.site)
+    FROM unnest(ARRAY['www.lexpress.fr','www.lexpress.eu','fr.lexpress.eu','pl.lexpress.eu']) AS s(site);
 END $f$;
 
 -- Fin anticipée. Une offre pas encore commencée est supprimée : personne ne l'a vue. Une offre en cours
@@ -161,7 +200,8 @@ BEGIN
   SELECT * INTO v FROM public.subscription_offers WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RETURN 'unknown'; END IF;
   IF v.ends_at <= now() THEN RETURN 'already_ended'; END IF;
-  IF v.starts_at > now() THEN
+  -- Commencée à l'instant même (starts_at = now()) : supprimée aussi, une fin à durée nulle serait refusée.
+  IF v.starts_at >= now() THEN
     DELETE FROM public.subscription_offers WHERE id = p_id;
     RETURN 'deleted';
   END IF;
@@ -171,11 +211,14 @@ END $f$;
 
 REVOKE ALL ON FUNCTION public.get_subscription_offer(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.assert_offer_manager(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.current_subscription_offer_id(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.displayed_subscription_offers(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.list_subscription_offers(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.end_subscription_offer(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_subscription_offer(text) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.displayed_subscription_offers(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.list_subscription_offers(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.end_subscription_offer(uuid, uuid) TO service_role;
 

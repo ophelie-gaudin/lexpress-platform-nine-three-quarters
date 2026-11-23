@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { PGlite } from '@electric-sql/pglite';
-import { familleUrl, validerOffre, offresAffichees, OFFRE_SITES } from './gift-links/functions/_shared/offres.mjs';
+import { familleUrl, validerOffre } from './gift-links/functions/_shared/offres.mjs';
 import { buildOffres, CIBLE_OFFRES } from './build-gift-links-function.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
@@ -91,12 +91,13 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
     ('00000000-0000-4000-8000-000000000002', ARRAY['pl.lexpress.eu'], '2026-01-01T00:00:00Z', now() + interval '5 days', 'B', '2026-01-02T00:00:00Z'),
     ('00000000-0000-4000-8000-000000000003', ARRAY['pl.lexpress.eu'], '2026-01-01T00:00:00Z', now() + interval '5 days', 'C', '2026-01-02T00:00:00Z')`);
   check((await affichee('pl.lexpress.eu')).label === 'C', 'même début, même création : l’identifiant départage — jamais un tirage');
-  const lignes = await q('SELECT * FROM public.subscription_offers');
-  const parJs = offresAffichees(lignes);
-  for (const site of Object.keys(OFFRE_SITES)) {
-    const sql = (await q('SELECT o.id FROM public.subscription_offers o, public.get_subscription_offer($1) g WHERE o.label IS NOT DISTINCT FROM g.label AND o.ends_at = g.ends_at AND $1 = ANY(o.sites)', [site]))[0]?.id ?? null;
-    check(parJs[site] === sql, `la liste du marketing annonce la même offre que la page, pour ${site}`);
-  }
+  // Départage à la microseconde : deux créations dans la même milliseconde, l'aînée a le plus grand id.
+  await q(`INSERT INTO public.subscription_offers (id, sites, starts_at, ends_at, label, created_at) VALUES
+    ('00000000-0000-4000-8000-0000000000f2', ARRAY['www.lexpress.eu'], '2026-01-01T00:00:00Z', now() + interval '5 days', 'Aînée', '2026-01-01T00:00:00.000100Z'),
+    ('00000000-0000-4000-8000-0000000000f1', ARRAY['www.lexpress.eu'], '2026-01-01T00:00:00Z', now() + interval '5 days', 'Cadette', '2026-01-01T00:00:00.000900Z')`);
+  check((await affichee('www.lexpress.eu')).label === 'Cadette', 'la création la plus récente gagne, à la microseconde près');
+  check((await q('SELECT site, id FROM public.displayed_subscription_offers($1)', [MARKETING])).find((r) => r.site === 'www.lexpress.eu').id === '00000000-0000-4000-8000-0000000000f1',
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : la liste du marketing et la page désignent la même offre — une seule fonction SQL choisit');
   check((await affichee('www.lexpress.fr')).url === null, 'sans URL, la RPC rend NULL : la page garde son lien par défaut');
   check((await q("SELECT * FROM public.get_subscription_offer('lexpress.fr')")).length === 0
     && (await q('SELECT * FROM public.get_subscription_offer(NULL)')).length === 0, 'un site inconnu ou nul ne rend rien');
@@ -148,7 +149,10 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
     ['site en double', { ...base, sites: ['pl.lexpress.eu', 'pl.lexpress.eu'] }, /doublon/],
     ['date sans fuseau', { ...base, ends_at: '2026-11-30T23:59:00' }, /avec fuseau/],
     ['date en nombre', { ...base, ends_at: 1764543540000 }, /avec fuseau/],
-    ['date impossible', { ...base, ends_at: '2026-02-31T10:00:00Z' }, /date valide|dans le futur/],
+    ['date impossible', { ...base, ends_at: '2026-11-31T22:00:00Z' }, /date du calendrier/],
+    ['29 février d’une année non bissextile', { ...base, ends_at: '2027-02-29T10:00:00Z' }, /date du calendrier/],
+    ['heure impossible', { ...base, ends_at: '2026-12-01T24:00:00Z' }, /date du calendrier/],
+    ['request_id mal formé', { ...base, request_id: 'a b' }, /request_id/],
     ['fin passée', { ...base, ends_at: '2026-11-01T00:00:00Z' }, /dans le futur/],
     ['fin avant début', { ...base, starts_at: '2026-12-05T00:00:00Z' }, /après starts_at/],
     ['URL http', { ...base, url: 'http://abonnements-digitaux.lexpress.fr/offres' }, /url refusée/],
@@ -183,11 +187,12 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
     const sql = {
       verify_api_client: ['SELECT * FROM public.verify_api_client($1)', [args.p_token_sha256]],
       list_subscription_offers: ['SELECT * FROM public.list_subscription_offers($1::uuid)', [args.p_client_id]],
+      displayed_subscription_offers: ['SELECT * FROM public.displayed_subscription_offers($1::uuid)', [args.p_client_id]],
       end_subscription_offer: ['SELECT public.end_subscription_offer($1::uuid, $2::uuid) AS r', [args.p_client_id, args.p_id]],
       create_subscription_offer: [`SELECT * FROM public.create_subscription_offer(p_client_id => $1::uuid,
         p_sites => ARRAY(SELECT jsonb_array_elements_text($2::jsonb)), p_ends_at => $3::timestamptz,
-        p_starts_at => $4::timestamptz, p_url => $5, p_label => $6, p_name => $7)`,
-        [args.p_client_id, JSON.stringify(args.p_sites), args.p_ends_at, args.p_starts_at, args.p_url, args.p_label, args.p_name]],
+        p_starts_at => $4::timestamptz, p_url => $5, p_label => $6, p_name => $7, p_request_id => $8)`,
+        [args.p_client_id, JSON.stringify(args.p_sites), args.p_ends_at, args.p_starts_at, args.p_url, args.p_label, args.p_name, args.p_request_id]],
     }[name];
     try {
       await db.exec('SET ROLE service_role');
@@ -226,7 +231,13 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
   const mauvais = await appel('POST', 'jeton-fictif-marketing', { sites: ['www.lexpress.fr'], ends_at: fin, url: 'https://evil.test/' });
   check(mauvais.status === 400 && /url refusée/.test(mauvais.corps.error), 'une URL hors domaine : 400 qui dit pourquoi');
 
-  const cree = await appel('POST', 'jeton-fictif-marketing', { sites: ['www.lexpress.fr', 'fr.lexpress.eu'], ends_at: fin, label: 'Black Friday : -50 %', name: 'black-friday-2026' });
+  const demande = { sites: ['www.lexpress.fr', 'fr.lexpress.eu'], ends_at: fin, label: 'Black Friday : -50 %', name: 'black-friday-2026', request_id: 'bf-2026-fr-1' };
+  const cree = await appel('POST', 'jeton-fictif-marketing', demande);
+  const rejeu = await appel('POST', 'jeton-fictif-marketing', demande);
+  check(rejeu.status === 201 && rejeu.corps.offer.id === cree.corps.offer.id && (await q('SELECT count(*)::int AS n FROM public.subscription_offers'))[0].n === 1,
+    'C’EST LA PROPRIÉTÉ QUI COMPTE : un POST renvoyé avec le même request_id rend la même offre — jamais un doublon qui resterait affiché');
+  const conflit = await appel('POST', 'jeton-fictif-marketing', { ...demande, label: 'Autre texte' });
+  check(conflit.status === 400 && /request_id déjà utilisé/.test(conflit.corps.error), 'même request_id, autre demande : refus nommé');
   check(cree.status === 201 && cree.corps.offer.status === 'active' && cree.corps.client === 'marketing-offres', `création : 201 — obtenu ${JSON.stringify(cree.corps)}`);
   check(!('created_by' in cree.corps.offer), 'la réponse ne montre pas l’identifiant interne du service');
   const id = cree.corps.offer.id;
@@ -252,6 +263,11 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
   const trace = (await q('SELECT ended_by, ended_at IS NOT NULL AS fini FROM public.subscription_offers WHERE id = $1', [id]))[0];
   check(trace.ended_by === MARKETING && trace.fini, 'la ligne reste, avec qui l’a terminée');
   check((await appel('DELETE', 'jeton-fictif-marketing', undefined, `?id=${id}`)).corps.result === 'already_ended', 'la terminer deux fois ne change rien');
+  // Commencée à l'instant même : la fin anticipée ne bute pas sur la contrainte de durée.
+  await db.exec('BEGIN');
+  const instant = (await q(`INSERT INTO public.subscription_offers (sites, starts_at, ends_at) VALUES (ARRAY['pl.lexpress.eu'], now(), now() + interval '1 day') RETURNING id`))[0].id;
+  check((await q('SELECT public.end_subscription_offer($1, $2) AS r', [MARKETING, instant]))[0].r === 'deleted', 'offre commencée à l’instant même : supprimée, sans erreur');
+  await db.exec('COMMIT');
   check(journal.every((l) => !/jeton-fictif|[0-9a-f]{64}/.test(l)), 'aucun jeton ni empreinte dans le journal');
   check(appels.filter((a) => a === 'verify_api_client').length > 0, 'chaque appel passe par la vérification du jeton existante');
 

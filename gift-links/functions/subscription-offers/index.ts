@@ -2,7 +2,8 @@
 //
 //   GET                      liste : offres à venir, en cours, terminées depuis moins de 30 jours,
 //                            et pour chaque site l'offre affichée en ce moment
-//   POST   { sites, ends_at, starts_at?, url?, label?, name? }   crée une offre
+//   POST   { sites, ends_at, starts_at?, url?, label?, name?, request_id? }   crée une offre
+//                            (même request_id renvoyé = la même offre, jamais un doublon)
 //   DELETE ?id=<uuid>        fin anticipée : supprime une offre à venir, termine une offre en cours
 //
 // AUTHENTIFICATION : le même jeton par service que create-gift-links, dans `x-gift-service-token`.
@@ -12,7 +13,7 @@
 // La page de lecture ne passe JAMAIS par ici : elle lit l'offre en cours par la RPC publique
 // get_subscription_offer, qui ne rend que libellé, URL et date de fin.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { estUuid, offrePublique, offresAffichees, validerOffre } from '../_shared/offres.mjs';
+import { estUuid, offrePublique, validerOffre } from '../_shared/offres.mjs';
 
 const env = (k: string) => Deno.env.get(k) ?? '';
 const json = (corps: unknown, status = 200) =>
@@ -69,8 +70,12 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     const { data, error } = await db.rpc('list_subscription_offers', { p_client_id: clientId });
     if (error) return refusBase(error, clientName, 'liste');
+    // L'offre affichée vient de la base, de la même fonction que la page : jamais recalculée ici.
+    const { data: affichees, error: erreurAffichees } = await db.rpc('displayed_subscription_offers', { p_client_id: clientId });
+    if (erreurAffichees) return refusBase(erreurAffichees, clientName, 'liste');
     const lignes = (data ?? []) as Array<Record<string, unknown>>;
-    return json({ offers: lignes.map((l) => offrePublique(l)), displayed_now: offresAffichees(lignes), client: clientName });
+    const displayed = Object.fromEntries(((affichees ?? []) as Array<{ site: string; id: string | null }>).map((a) => [a.site, a.id ?? null]));
+    return json({ offers: lignes.map((l) => offrePublique(l)), displayed_now: displayed, truncated: lignes.length >= 500, client: clientName });
   }
 
   if (req.method === 'DELETE') {

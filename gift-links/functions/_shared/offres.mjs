@@ -4,7 +4,7 @@
 // s'explique, champ par champ, au lieu d'une erreur PostgreSQL. Les deux règles disent la même chose ;
 // le test les confronte sur les mêmes cas.
 
-export const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name']);
+export const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id']);
 export const OFFRE_SITES = Object.freeze({
   'www.lexpress.fr': Object.freeze({ famille: 'fr', langue: 'fr' }),
   'www.lexpress.eu': Object.freeze({ famille: 'eu', langue: 'en' }),
@@ -26,10 +26,18 @@ export function familleUrl(url) {
 
 // ISO 8601 avec fuseau explicite : « 2026-11-30T23:59:00+01:00 » ou « …Z ». Sans fuseau, la même
 // chaîne désigne deux instants selon la machine qui la lit ; on préfère refuser que deviner.
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?(Z|[+-](\d{2}):(\d{2}))$/;
 function date(valeur, champ) {
-  if (typeof valeur !== 'string' || !ISO.test(valeur)) {
+  const m = typeof valeur === 'string' ? ISO.exec(valeur) : null;
+  if (!m) {
     return { erreur: `${champ} doit être une date ISO 8601 avec fuseau, par exemple 2026-11-30T23:59:00+01:00 (reçu : ${JSON.stringify(valeur)})` };
+  }
+  // Le calendrier d'abord : Date.parse transforme un 31 novembre en 1er décembre sans rien dire.
+  const [an, mois, jour, heure, minute, seconde] = [m[1], m[2], m[3], m[4], m[5], m[7] ?? '0'].map(Number);
+  const jours = new Date(Date.UTC(an, mois, 0)).getUTCDate();
+  if (mois < 1 || mois > 12 || jour < 1 || jour > jours || heure > 23 || minute > 59 || seconde > 59
+      || Number(m[10] ?? 0) > 23 || Number(m[11] ?? 0) > 59) {
+    return { erreur: `${champ} n'est pas une date du calendrier (reçu : ${JSON.stringify(valeur)})` };
   }
   const t = Date.parse(valeur);
   if (!Number.isFinite(t)) return { erreur: `${champ} n'est pas une date valide (reçu : ${JSON.stringify(valeur)})` };
@@ -99,6 +107,14 @@ export function validerOffre(corps, maintenant = new Date()) {
     name = corps.name.trim();
   }
 
+  let requestId = null;
+  if (corps.request_id !== undefined && corps.request_id !== null) {
+    if (typeof corps.request_id !== 'string' || !/^[A-Za-z0-9._:-]{1,100}$/.test(corps.request_id)) {
+      return { erreur: 'request_id : 1 à 100 caractères parmi lettres, chiffres et . _ : -' };
+    }
+    requestId = corps.request_id;
+  }
+
   return {
     offre: {
       p_sites: [...sites],
@@ -107,6 +123,7 @@ export function validerOffre(corps, maintenant = new Date()) {
       p_url: url,
       p_label: label,
       p_name: name,
+      p_request_id: requestId,
     },
   };
 }
@@ -124,16 +141,4 @@ export function offrePublique(ligne, maintenant = new Date()) {
     url: ligne.url ?? null, label: ligne.label ?? null,
     status: fin <= t ? 'ended' : debut > t ? 'scheduled' : 'active',
   };
-}
-
-// Pour chaque site, l'offre affichée en ce moment selon la règle de 018 (début le plus récent, puis
-// création la plus récente, puis identifiant). Sert la réponse de la liste ; la page, elle, demande à la base.
-export function offresAffichees(lignes, maintenant = new Date()) {
-  const t = maintenant.getTime();
-  const enCours = lignes
-    .filter((l) => Date.parse(l.starts_at) <= t && Date.parse(l.ends_at) > t)
-    .sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at)
-      || Date.parse(b.created_at) - Date.parse(a.created_at)
-      || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-  return Object.fromEntries(Object.keys(OFFRE_SITES).map((site) => [site, enCours.find((l) => l.sites.includes(site))?.id ?? null]));
 }
