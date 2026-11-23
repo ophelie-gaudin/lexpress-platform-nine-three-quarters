@@ -58,7 +58,7 @@
  }
 --- /dev/null
 +++ b/src/lib/internalLinks.ts
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,103 @@
 +// Liens du corps d'article (retour d'Enzo du 20/11, point 6) : aucune navigation interne.
 +// Un lien vers lexpress.fr ou lexpress.eu mène au mur d'abonnement ; on garde son texte, on retire le lien.
 +// Seul un lien http(s) absolu vers un autre site reste cliquable (un rapport, un PDF officiel…).
@@ -118,7 +118,8 @@
 +
 +// Toute balise, guillemets compris : un « < » ou un « > » à l'intérieur d'une valeur d'attribut (alt d'une
 +// image…) ne compte jamais comme une balise. Seules les balises a sont modifiées ; les autres passent telles quelles.
-+const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
++// Un commentaire HTML est lu d'un bloc, jusqu'à son « --> » : un « <a » cité dedans n'est pas une balise.
++const TAG = /<!--[\s\S]*?(?:-->|$)|<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
 +// Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
 +// Valeur sans guillemets : jusqu'au prochain espace ou « > », comme le navigateur (un « = » en fait partie).
 +const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
@@ -143,6 +144,7 @@
 +  for (let match = TAG.exec(html); match; match = TAG.exec(html)) {
 +    out += html.slice(from, match.index);
 +    const [tag, closing, name = "", attributes = "", end] = match;
++    if (tag.startsWith("<!--")) { out += tag; from = match.index + tag.length; continue; }
 +    if (!end) {
 +      // Balise mal formée (guillemet jamais fermé…) : on ne sait plus où finissent les attributs. Le reste du
 +      // fragment devient du texte échappé : ni lien, ni attribut, ni balise ne peut en sortir.
@@ -162,7 +164,7 @@
 +}
 --- a/src/lib/subscriptionLink.ts
 +++ b/src/lib/subscriptionLink.ts
-@@ -1,24 +1,43 @@
+@@ -1,24 +1,44 @@
  import { articleActions, type ArticleLanguage } from "./articleLanguage.ts";
 -import { editions, type Edition } from "./edition.ts";
 +import { copy, editions, type Edition } from "./edition.ts";
@@ -200,11 +202,12 @@
 +  // The offer's own query is kept byte for byte (a promo code stays encoded as written); only the
 +  // forwarded keys are replaced, then appended. searchParams.set would re-encode the whole query.
 +  // Same parser as the visitor's keys (form-urlencoded, invalid UTF-8 included), so a key matches exactly.
-+  const keyOf = (segment: string) => [...new URLSearchParams(segment).keys()][0] ?? "";
++  // The leading "?" is consumed by the parser, so a literal "?" starting a key is kept as part of it.
++  const keyOf = (segment: string) => [...new URLSearchParams(`?${segment}`).keys()][0] ?? "";
 +  const query = url.search.slice(1);
 +  const kept = query === "" ? [] : query.split("&").filter((segment) => segment === "" || !forwarded.has(keyOf(segment)));
 +  const added = [...forwarded].map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-+  url.search = [...kept, ...added].join("&");
++  url.search = `?${[...kept, ...added].join("&")}`;
    return url.toString();
 +}
 +
@@ -218,7 +221,7 @@
  }
 --- /dev/null
 +++ b/src/lib/subscriptionOffer.ts
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,50 @@
 +// Offre d'abonnement du moment (migration 018), lue par la clé publique via la RPC get_subscription_offer.
 +// Hors offre, ou au moindre doute sur la réponse, le lecteur garde son bouton par défaut : jamais un bouton cassé.
 +import type { ArticleLanguage } from "./articleLanguage.ts";
@@ -236,7 +239,8 @@
 +
 +/** Même règle que la base : https, hôte de la liste, du domaine du site, sans port, identifiants ni espace. */
 +export function isAllowedOfferUrl(url: string, site: OfferSite): boolean {
-+  if (url.length > 500 || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return false;
++  // Longueur en caractères (un emoji compte pour un), comme length() en SQL.
++  if ([...url].length > 500 || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return false;
 +  const pattern = site === "www.lexpress.fr"
 +    ? /^https:\/\/(abonnements-digitaux\.lexpress\.fr|(www\.)?lexpress\.fr)([/?]|$)/
 +    : /^https:\/\/((www|fr|pl)\.)?lexpress\.eu([/?]|$)/;
