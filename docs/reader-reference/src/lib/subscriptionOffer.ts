@@ -15,7 +15,8 @@ export function offerSite(edition: Edition, language?: ArticleLanguage | null): 
 
 /** Même règle que la base : https, hôte de la liste, du domaine du site, sans port, identifiants ni espace. */
 export function isAllowedOfferUrl(url: string, site: OfferSite): boolean {
-  if (url.length > 500 || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return false;
+  // Longueur en caractères (un emoji compte pour un), comme length() en SQL.
+  if ([...url].length > 500 || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return false;
   const pattern = site === "www.lexpress.fr"
     ? /^https:\/\/(abonnements-digitaux\.lexpress\.fr|(www\.)?lexpress\.fr)([/?]|$)/
     : /^https:\/\/((www|fr|pl)\.)?lexpress\.eu([/?]|$)/;

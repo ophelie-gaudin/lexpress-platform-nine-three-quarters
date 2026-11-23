@@ -23,7 +23,7 @@ const NOM_MAX = 80;
 // Même règle que offer_url_family() en SQL. https, hôte exact de la liste, rien entre l'hôte et le
 // chemin (ni port, ni identifiants, ni fragment), aucun espace ni caractère de contrôle.
 function familleUrl(url) {
-  if (typeof url !== 'string' || url.length > URL_MAX || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return null;
+  if (typeof url !== 'string' || [...url].length > URL_MAX || /[\s\u0000-\u001f\u007f\\"<>`]/.test(url)) return null;
   if (/^https:\/\/(abonnements-digitaux\.lexpress\.fr|(www\.)?lexpress\.fr)([/?]|$)/.test(url)) return 'fr';
   if (/^https:\/\/((www|fr|pl)\.)?lexpress\.eu([/?]|$)/.test(url)) return 'eu';
   return null;

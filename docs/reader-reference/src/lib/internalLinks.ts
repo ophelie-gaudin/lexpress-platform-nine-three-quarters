@@ -57,7 +57,8 @@ export function keepsLink(href: string | null | undefined): boolean {
 
 // Toute balise, guillemets compris : un « < » ou un « > » à l'intérieur d'une valeur d'attribut (alt d'une
 // image…) ne compte jamais comme une balise. Seules les balises a sont modifiées ; les autres passent telles quelles.
-const TAG = /<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
+// Un commentaire HTML est lu d'un bloc, jusqu'à son « --> » : un « <a » cité dedans n'est pas une balise.
+const TAG = /<!--[\s\S]*?(?:-->|$)|<(\/?)([A-Za-z][A-Za-z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(>?)/g;
 // Un attribut à la fois : la valeur entre guillemets d'un attribut (title…) n'est jamais lue comme un href.
 // Valeur sans guillemets : jusqu'au prochain espace ou « > », comme le navigateur (un « = » en fait partie).
 const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
@@ -82,6 +83,7 @@ export function unlinkInternalLinks(html: string): string {
   for (let match = TAG.exec(html); match; match = TAG.exec(html)) {
     out += html.slice(from, match.index);
     const [tag, closing, name = "", attributes = "", end] = match;
+    if (tag.startsWith("<!--")) { out += tag; from = match.index + tag.length; continue; }
     if (!end) {
       // Balise mal formée (guillemet jamais fermé…) : on ne sait plus où finissent les attributs. Le reste du
       // fragment devient du texte échappé : ni lien, ni attribut, ni balise ne peut en sortir.

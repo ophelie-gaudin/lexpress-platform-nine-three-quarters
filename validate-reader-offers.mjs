@@ -119,6 +119,10 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   const invalide = new URL(link.subscriptionAction('?at_campaign%FF=new', 'FR', undefined, { label: null, url: 'https://www.lexpress.fr/offre?at_campaign%FF=old&promo=BF%20A', endsAt: Date.now() + 1e6 }).href);
   check(invalide.searchParams.getAll('at_campaign\ufffd').join() === 'new' && invalide.search.includes('promo=BF%20A'), `clé mal encodée : la valeur du visiteur remplace celle de l’offre — obtenu ${invalide.search}`);
   check(link.buildSubscriptionUrl('?at_medium=Whatsapp', 'FR') === 'https://abonnements-digitaux.lexpress.fr/offres?at_medium=Whatsapp', 'URL par défaut sans requête : pas d’esperluette en tête');
+  const doubleQ = link.subscriptionAction('?at_medium=Newsletter', 'FR', undefined, { label: null, url: 'https://www.lexpress.fr/offre??promo=BF&?s=offre', endsAt: Date.now() + 1e6 });
+  check(doubleQ.href === 'https://www.lexpress.fr/offre??promo=BF&?s=offre&at_medium=Newsletter', `clés commençant par « ? » gardées — obtenu ${doubleQ.href}`);
+  const emoji = 'https://www.lexpress.fr/offre?at_campaign=' + 'x'.repeat(499 - 'https://www.lexpress.fr/offre?at_campaign='.length) + '🎁';
+  check(offers.isAllowedOfferUrl(emoji, 'www.lexpress.fr') && !offers.isAllowedOfferUrl(emoji + 'x', 'www.lexpress.fr'), 'longueur comptée en caractères : 500 avec un emoji passe, 501 non');
   const libelleSeul = link.subscriptionAction('?at_medium=Whatsapp', 'EUR', 'pl', { label: 'Black Friday', url: null, endsAt: Date.now() + 1e6 });
   check(libelleSeul.label === 'Black Friday' && libelleSeul.href === 'https://pl.lexpress.eu/subskrypcja/?at_medium=Whatsapp', 'offre sans URL : lien par défaut du site, avec les UTM');
   const urlSeule = link.subscriptionAction('', 'EUR', 'fr', { label: null, url: 'https://fr.lexpress.eu/abonnement/?promo=bf', endsAt: Date.now() + 1e6 });
@@ -254,9 +258,11 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     ['&quest; qui déplace l’hôte vers L’Express', '<a href="https://www.lexpress.fr&quest;@evil.example/">a</a>', 'a'],
     ['&commat; décodé comme le navigateur', '<a href="https://evil.example&commat;www.lexpress.fr/">a</a>', 'a'],
     ['entité inconnue avec point-virgule', '<a href="https://ext.example&inconnue;/x">a</a>', 'a'],
+    ['commentaire qui cite « <a »', 'Avant <!-- <a modifier après publication --> <a href="https://www.lexpress.fr/x">lien</a> fin', 'Avant <!-- <a modifier après publication --> lien fin'],
+    ['commentaire jamais fermé', 'Avant <!-- <a href="https://www.lexpress.fr/x">', 'Avant <!-- <a href="https://www.lexpress.fr/x">'],
     ['data-href trompeur', '<a data-href="https://ext.example/" href="https://www.lexpress.fr/x">a</a>', 'a'],
   ]) check(u(html) === attendu, `${cas} : ${JSON.stringify(u(html))}`);
-  for (const garde of ['<a href="https://www.gouv.fr/r.pdf" target="_blank" rel="noopener">r</a>', '<a href="http://example.org/">e</a>', '<a href="https://ext.example/?a=1&b=2">esperluette brute</a>', '<a href="https://ext.example/?a=1&amp;b=2">esperluette encodée</a>', '<a href="https://example.org&quest;.lexpress.fr/r">rapport</a>', '<a href=" https://ext.example/ ">espaces ASCII</a>',
+  for (const garde of ['<a href="https://www.gouv.fr/r.pdf" target="_blank" rel="noopener">r</a>', '<a href="http://example.org/">e</a>', 'Avant <!-- <a modifier --> <a href="https://example.org/rapport">Rapport</a>', '<a href="https://ext.example/?a=1&b=2">esperluette brute</a>', '<a href="https://ext.example/?a=1&amp;b=2">esperluette encodée</a>', '<a href="https://example.org&quest;.lexpress.fr/r">rapport</a>', '<a href=" https://ext.example/ ">espaces ASCII</a>',
     '<a href="https://lexpress.fr.example.org/">sosie</a>', '<a href="https://notlexpress.fr/">voisin</a>', '<abbr title="x">abbr</abbr>',
     '<a title="a > b" href="https://www.gouv.fr/r.pdf">rapport</a>', '<a title=" href=https://www.lexpress.fr/" href="https://ext.example/">ext</a>']) {
     check(u(garde) === garde, `gardé tel quel : ${garde}`);
