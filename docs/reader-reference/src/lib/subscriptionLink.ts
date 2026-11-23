@@ -24,11 +24,10 @@ export function buildSubscriptionUrl(search?: string, edition: Edition = "FR", l
 
   // The offer's own query is kept byte for byte (a promo code stays encoded as written); only the
   // forwarded keys are replaced, then appended. searchParams.set would re-encode the whole query.
-  const keyOf = (segment: string) => {
-    const raw = segment.split("=")[0] ?? "";
-    try { return decodeURIComponent(raw.replace(/\+/g, " ")); } catch { return raw; }
-  };
-  const kept = url.search.slice(1).split("&").filter((segment) => segment !== "" && !forwarded.has(keyOf(segment)));
+  // Same parser as the visitor's keys (form-urlencoded, invalid UTF-8 included), so a key matches exactly.
+  const keyOf = (segment: string) => [...new URLSearchParams(segment).keys()][0] ?? "";
+  const query = url.search.slice(1);
+  const kept = query === "" ? [] : query.split("&").filter((segment) => segment === "" || !forwarded.has(keyOf(segment)));
   const added = [...forwarded].map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
   url.search = [...kept, ...added].join("&");
   return url.toString();

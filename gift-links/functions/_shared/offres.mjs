@@ -41,6 +41,9 @@ function date(valeur, champ) {
   }
   const t = Date.parse(valeur);
   if (!Number.isFinite(t)) return { erreur: `${champ} n'est pas une date valide (reçu : ${JSON.stringify(valeur)})` };
+  // Une fois ramenée en UTC, l'année doit rester lisible par PostgreSQL et par toISOString (4 chiffres).
+  const annee = new Date(t).getUTCFullYear();
+  if (annee < 2000 || annee > 9999) return { erreur: `${champ} doit tomber entre l'an 2000 et l'an 9999 (reçu : ${JSON.stringify(valeur)})` };
   return { date: new Date(t) };
 }
 
