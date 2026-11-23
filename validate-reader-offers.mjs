@@ -157,7 +157,8 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   // ── 5. LA BARRE : une seule action, collée en bas, sur l'article comme sur un refus.
   queries['subscription-offer'] = { isPending: true };
   check(bar.SubscribeBar({ token: 'a'.repeat(32), search: '', language: 'pl' }) === null, 'offre en cours de lecture : pas de libellé qui change sous les yeux');
-  check(queries.last.queryKey.join() === `subscription-offer,TEST,pl.lexpress.eu,${'a'.repeat(32)}` && queries.last.retry === false,
+  check(queries.last.queryKey.join() === `subscription-offer,TEST,pl.lexpress.eu,${'a'.repeat(32)}` && queries.last.retry === false
+    && queries.last.gcTime === 0 && queries.last.networkMode === 'always',
     'C’EST LA PROPRIÉTÉ QUI COMPTE : une lecture par article affiché (clé : environnement, site, jeton), sans réessai — un article ouvert après le début d’une offre la voit');
   queries['subscription-offer'] = { isPending: false, data: null };
   const sansOffre = bar.SubscribeBar({ token: 'a'.repeat(32), search: '?at_medium=Whatsapp', language: 'pl' });
@@ -226,7 +227,10 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     ['sans href', '<a name="x">a</a>', 'a'],
     ['javascript', '<a href="javascript:alert(1)">a</a>', 'a'],
     ['non fermé', 'avant <a href="https://www.lexpress.fr/x">a et la suite', 'avant a et la suite'],
-    ['guillemet non fermé', 'avant <a href="https://www.lexpress.fr/x>a</a>', 'avant a'],
+    ['guillemet non fermé', 'avant <a href="https://www.lexpress.fr/x>a</a>', 'avant &lt;a href="https://www.lexpress.fr/x&gt;a&lt;/a&gt;'],
+    ['« <a » dans le alt d’une image', '<img alt="<a \'" src="https://i.example/x.jpg"> <a href="https://www.lexpress.fr/x">lien</a>', '<img alt="<a \'" src="https://i.example/x.jpg"> lien'],
+    ['alt piégé puis lien externe (injection)', '<img alt="<a \'" src="i.jpg"></p><p>Voir <a href="https://e.example/ src=x onerror=alert(1) ">r</a>', '<img alt="<a \'" src="i.jpg"></p><p>Voir <a href="https://e.example/ src=x onerror=alert(1) ">r</a>'],
+    ['balise quelconque mal formée', '<img alt="x src=y> <a href="https://www.lexpress.fr/x">a</a>', '&lt;img alt="x src=y&gt; &lt;a href="https://www.lexpress.fr/x"&gt;a&lt;/a&gt;'],
     ['title qui cite un href externe', '<a title=" href=https://ext.example/" href="https://www.lexpress.fr/x">a</a>', 'a'],
     ['title qui cite un href, guillemets simples', "<a title=' href=\"https://ext.example/\"' href='https://www.lexpress.fr/x'>a</a>", 'a'],
     ['deux href : le premier compte', '<a href="https://www.lexpress.fr/x" href="https://ext.example/">a</a>', 'a'],

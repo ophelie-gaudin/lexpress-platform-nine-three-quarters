@@ -53,7 +53,9 @@ Règles :
 - **Un seul appel par affichage**, une fois la réponse de lecture reçue, avec un délai de
   4 secondes au plus. Pas de réessai. Cet appel ne compte aucune lecture. Ne réutilise pas
   la réponse obtenue pour un autre article (clé de cache : environnement, site **et jeton**) :
-  un article ouvert après le début d’une offre doit la voir.
+  un article ouvert après le début d’une offre doit la voir, et un article rouvert ne montre pas
+  l’ancienne réponse pendant la nouvelle lecture (rien gardé en cache après l’affichage). Hors
+  ligne, l’appel est tenté quand même : son échec rend le bouton par défaut.
 - Tant que l’appel n’a pas répondu (4 s au plus), n’affiche pas encore la barre : pas de
   libellé qui change sous les yeux du lecteur.
 - **Vérifie la réponse avant de l’utiliser**, sinon ignore l’offre entière : exactement une
