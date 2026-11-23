@@ -53,8 +53,12 @@ d’Ophélie.
   du marketing (`displayed_now`), à la microseconde : jamais deux réponses différentes.
 - **Rejeu sans doublon** : `request_id` (recommandé) rend l’offre déjà créée si une requête est
   renvoyée après une réponse perdue ; réutilisé pour une autre demande, il est refusé.
-- **Fin anticipée** : une offre pas encore commencée (ou commencée à l’instant même) est supprimée ;
-  une offre en cours se termine maintenant, la ligne reste avec qui l’a terminée.
+- **Fin anticipée** : rien n’est supprimé ni redaté. La ligne est marquée `ended_at` (et
+  `ended_by`) et n’est plus affichée ; `cancelled` si elle n’avait pas commencé, `ended` sinon.
+  Un rejeu de sa création la retrouve telle quelle, au lieu de la recréer.
+- **Liste du marketing en un appel SQL** (une photographie, une horloge) : offres, offre
+  affichée par site et statuts ; 500 au plus, les offres affichées en tête, `truncated` sinon.
+- **Index GIN sur `sites`** : chaque page lit l’offre de son site sans parcourir les autres.
 - **Exposition publique minimale** : `get_subscription_offer(p_site)` ne rend que `label`,
   `url`, `ends_at`, au plus une ligne. Table en RLS sans politique, aucun droit `anon` ni
   `authenticated`, ni lecture ni écriture. Les offres futures, noms internes et auteurs ne
@@ -174,10 +178,8 @@ dépendre du patch.
 - **Lecteur** : restaurer la publication Lovable capturée avant intervention. Sans risque
   pour les données.
 - **Couper une offre** sans rien retirer : `DELETE` de l’API (README), ou
-  en SQL, selon l’état de l’offre :
-  `UPDATE public.subscription_offers SET ends_at = now(), ended_at = now() WHERE id = '<id>' AND starts_at < now() AND ends_at > now();`
-  (en cours) ou `DELETE FROM public.subscription_offers WHERE id = '<id>' AND starts_at >= now();`
-  (pas encore commencée : `ends_at = now()` y serait refusé, la fin devant suivre le début).
+  en SQL, que l’offre soit en cours ou à venir :
+  `UPDATE public.subscription_offers SET ended_at = now() WHERE id = '<id>' AND ended_at IS NULL;`
 - **Couper le marketing** : `UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-offres';`
 - **Fonction** : la supprimer dans le tableau de bord (Edge Functions → `subscription-offers`
   → Delete). Aucune autre fonction n’en dépend.
