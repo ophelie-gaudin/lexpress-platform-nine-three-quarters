@@ -114,6 +114,11 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
   const promo = link.subscriptionAction('?at_medium=Newsletter', 'FR', undefined, { label: null, url: 'https://abonnements-digitaux.lexpress.fr/offres?BF26&code=A%20B&at_medium=Offre', endsAt: Date.now() + 1e6 });
   check(promo.href === 'https://abonnements-digitaux.lexpress.fr/offres?BF26&code=A%20B&at_medium=Newsletter',
     `les paramètres de l’offre gardent leur écriture exacte (code promo), seul at_medium est remplacé — obtenu ${promo.href}`);
+  const vides = link.subscriptionAction('?at_medium=Newsletter', 'FR', undefined, { label: null, url: 'https://www.lexpress.fr/offre?promo=BF&&mode=annual', endsAt: Date.now() + 1e6 });
+  check(vides.href === 'https://www.lexpress.fr/offre?promo=BF&&mode=annual&at_medium=Newsletter', `segments vides de l’offre gardés — obtenu ${vides.href}`);
+  const invalide = new URL(link.subscriptionAction('?at_campaign%FF=new', 'FR', undefined, { label: null, url: 'https://www.lexpress.fr/offre?at_campaign%FF=old&promo=BF%20A', endsAt: Date.now() + 1e6 }).href);
+  check(invalide.searchParams.getAll('at_campaign\ufffd').join() === 'new' && invalide.search.includes('promo=BF%20A'), `clé mal encodée : la valeur du visiteur remplace celle de l’offre — obtenu ${invalide.search}`);
+  check(link.buildSubscriptionUrl('?at_medium=Whatsapp', 'FR') === 'https://abonnements-digitaux.lexpress.fr/offres?at_medium=Whatsapp', 'URL par défaut sans requête : pas d’esperluette en tête');
   const libelleSeul = link.subscriptionAction('?at_medium=Whatsapp', 'EUR', 'pl', { label: 'Black Friday', url: null, endsAt: Date.now() + 1e6 });
   check(libelleSeul.label === 'Black Friday' && libelleSeul.href === 'https://pl.lexpress.eu/subskrypcja/?at_medium=Whatsapp', 'offre sans URL : lien par défaut du site, avec les UTM');
   const urlSeule = link.subscriptionAction('', 'EUR', 'fr', { label: null, url: 'https://fr.lexpress.eu/abonnement/?promo=bf', endsAt: Date.now() + 1e6 });
@@ -246,9 +251,12 @@ declare module "@/lib/bodyHtml" { export function sanitizeBodyHtml(html: string)
     ['espace insécable encodée', '<a href="&#160;https://ext.example/">a</a>', 'a'],
     ['href sans guillemets avec « = »', '<a href=https://evil.example=@www.lexpress.fr/x>a</a>', 'a'],
     ['href sans guillemets avec « ` »', '<a href=https://www.lexpress.fr/`x>a</a>', 'a'],
+    ['&quest; qui déplace l’hôte vers L’Express', '<a href="https://www.lexpress.fr&quest;@evil.example/">a</a>', 'a'],
+    ['&commat; décodé comme le navigateur', '<a href="https://evil.example&commat;www.lexpress.fr/">a</a>', 'a'],
+    ['entité inconnue avec point-virgule', '<a href="https://ext.example&inconnue;/x">a</a>', 'a'],
     ['data-href trompeur', '<a data-href="https://ext.example/" href="https://www.lexpress.fr/x">a</a>', 'a'],
   ]) check(u(html) === attendu, `${cas} : ${JSON.stringify(u(html))}`);
-  for (const garde of ['<a href="https://www.gouv.fr/r.pdf" target="_blank" rel="noopener">r</a>', '<a href="http://example.org/">e</a>', '<a href=" https://ext.example/ ">espaces ASCII</a>',
+  for (const garde of ['<a href="https://www.gouv.fr/r.pdf" target="_blank" rel="noopener">r</a>', '<a href="http://example.org/">e</a>', '<a href="https://ext.example/?a=1&b=2">esperluette brute</a>', '<a href="https://ext.example/?a=1&amp;b=2">esperluette encodée</a>', '<a href="https://example.org&quest;.lexpress.fr/r">rapport</a>', '<a href=" https://ext.example/ ">espaces ASCII</a>',
     '<a href="https://lexpress.fr.example.org/">sosie</a>', '<a href="https://notlexpress.fr/">voisin</a>', '<abbr title="x">abbr</abbr>',
     '<a title="a > b" href="https://www.gouv.fr/r.pdf">rapport</a>', '<a title=" href=https://www.lexpress.fr/" href="https://ext.example/">ext</a>']) {
     check(u(garde) === garde, `gardé tel quel : ${garde}`);

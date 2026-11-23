@@ -153,6 +153,7 @@ const affichee = async (site) => (await q('SELECT * FROM public.get_subscription
     ['29 février d’une année non bissextile', { ...base, ends_at: '2027-02-29T10:00:00Z' }, /date du calendrier/],
     ['microsecondes', { ...base, ends_at: '2026-12-01T10:00:00.0001Z' }, /avec fuseau/],
     ['heure impossible', { ...base, ends_at: '2026-12-01T24:00:00Z' }, /date du calendrier/],
+    ['année hors de portée de PostgreSQL', { ...base, ends_at: '9999-12-31T23:30:00-01:00' }, /an 9999/],
     ['request_id mal formé', { ...base, request_id: 'a b' }, /request_id/],
     ['fin passée', { ...base, ends_at: '2026-11-01T00:00:00Z' }, /dans le futur/],
     ['fin avant début', { ...base, starts_at: '2026-12-05T00:00:00Z' }, /après starts_at/],
