@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS public.subscription_offers (
 COMMENT ON TABLE public.subscription_offers IS
   'Offres d''abonnement affichées dans la barre de la page de lecture. Écriture par la fonction subscription-offers seulement ; lecture publique par get_subscription_offer, trois champs.';
 CREATE INDEX IF NOT EXISTS subscription_offers_ends_at ON public.subscription_offers (ends_at);
+-- Chaque page lit l'offre de son site : filtre par appartenance au tableau, sans parcourir les autres sites.
+CREATE INDEX IF NOT EXISTS subscription_offers_sites ON public.subscription_offers USING gin (sites);
 CREATE UNIQUE INDEX IF NOT EXISTS subscription_offers_request ON public.subscription_offers (created_by, request_id)
   WHERE request_id IS NOT NULL;
 
@@ -104,7 +106,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
   SELECT o.id
     FROM public.subscription_offers o
    WHERE p_site = ANY (o.sites)
-     AND o.starts_at <= now() AND o.ends_at > now()
+     AND o.starts_at <= now() AND o.ends_at > now() AND o.ended_at IS NULL
    ORDER BY o.starts_at DESC, o.created_at DESC, o.id DESC
    LIMIT 1
 $f$;
@@ -165,32 +167,40 @@ BEGIN
   RETURN v;
 END $f$;
 
--- Offres utiles au marketing : à venir, en cours, et terminées depuis moins de 30 jours. 500 au plus,
--- en cours d'abord : une liste tronquée ne cache jamais ce qui est affiché. La fonction le signale.
+-- La liste du marketing, en un seul appel donc une seule photographie de la base et une seule horloge :
+-- offres à venir, en cours, et terminées depuis moins de 30 jours (500 au plus, celles affichées en tête,
+-- puis celles en cours), l'offre affichée par site (même fonction que la page) et `truncated`.
 CREATE OR REPLACE FUNCTION public.list_subscription_offers(p_client_id uuid)
-RETURNS SETOF public.subscription_offers
+RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+DECLARE v_displayed jsonb; v_offers jsonb; v_total integer;
 BEGIN
   PERFORM public.assert_offer_manager(p_client_id);
-  RETURN QUERY SELECT * FROM public.subscription_offers
-   WHERE ends_at > now() - interval '30 days'
-   ORDER BY (starts_at <= now() AND ends_at > now()) DESC, (ends_at > now()) DESC, starts_at DESC, created_at DESC, id DESC
-   LIMIT 500;
-END $f$;
-
--- Pour chaque site, l'offre affichée en ce moment : la même fonction que la page.
-CREATE OR REPLACE FUNCTION public.displayed_subscription_offers(p_client_id uuid)
-RETURNS TABLE (site text, id uuid)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
-BEGIN
-  PERFORM public.assert_offer_manager(p_client_id);
-  RETURN QUERY SELECT s.site, public.current_subscription_offer_id(s.site)
+  SELECT jsonb_object_agg(s.site, public.current_subscription_offer_id(s.site))
+    INTO v_displayed
     FROM unnest(ARRAY['www.lexpress.fr','www.lexpress.eu','fr.lexpress.eu','pl.lexpress.eu']) AS s(site);
+  SELECT count(*) INTO v_total FROM public.subscription_offers WHERE COALESCE(ended_at, ends_at) > now() - interval '30 days';
+  SELECT COALESCE(jsonb_agg(x.offer ORDER BY x.rank), '[]'::jsonb) INTO v_offers FROM (
+    SELECT jsonb_build_object(
+             'id', o.id, 'name', o.name, 'sites', to_jsonb(o.sites), 'starts_at', o.starts_at, 'ends_at', o.ends_at,
+             'url', o.url, 'label', o.label, 'ended_at', o.ended_at,
+             'status', CASE WHEN o.ended_at IS NOT NULL OR o.ends_at <= now() THEN 'ended'
+                            WHEN o.starts_at > now() THEN 'scheduled' ELSE 'active' END) AS offer,
+           row_number() OVER (ORDER BY
+             -- COALESCE : un site sans offre donne NULL, et NULL passerait devant en tri décroissant.
+             COALESCE(o.id IN (SELECT e.value::uuid FROM jsonb_each_text(v_displayed) e WHERE e.value IS NOT NULL), false) DESC,
+             (o.ended_at IS NULL AND o.starts_at <= now() AND o.ends_at > now()) DESC,
+             (o.ended_at IS NULL AND o.ends_at > now()) DESC,
+             o.starts_at DESC, o.created_at DESC, o.id DESC) AS rank
+      FROM public.subscription_offers o
+     WHERE COALESCE(o.ended_at, o.ends_at) > now() - interval '30 days'
+  ) x WHERE x.rank <= 500;
+  RETURN jsonb_build_object('offers', v_offers, 'displayed_now', v_displayed, 'truncated', v_total > 500);
 END $f$;
 
--- Fin anticipée. Une offre pas encore commencée est supprimée : personne ne l'a vue. Une offre en cours
--- se termine maintenant, et la ligne reste pour l'historique. Une offre terminée ne bouge plus.
--- Rend 'deleted', 'ended', 'already_ended' ou 'unknown'.
+-- Fin anticipée : la ligne reste, marquée `ended_at`, et ne s'affiche plus. Ses dates ne changent pas, si
+-- bien qu'un POST rejoué avec le même request_id retrouve l'offre au lieu d'en recréer une.
+-- Rend 'cancelled' (pas encore commencée), 'ended' (en cours), 'already_ended' ou 'unknown'.
 CREATE OR REPLACE FUNCTION public.end_subscription_offer(p_client_id uuid, p_id uuid)
 RETURNS text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
@@ -199,26 +209,19 @@ BEGIN
   PERFORM public.assert_offer_manager(p_client_id);
   SELECT * INTO v FROM public.subscription_offers WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RETURN 'unknown'; END IF;
-  IF v.ends_at <= now() THEN RETURN 'already_ended'; END IF;
-  -- Commencée à l'instant même (starts_at = now()) : supprimée aussi, une fin à durée nulle serait refusée.
-  IF v.starts_at >= now() THEN
-    DELETE FROM public.subscription_offers WHERE id = p_id;
-    RETURN 'deleted';
-  END IF;
-  UPDATE public.subscription_offers SET ends_at = now(), ended_at = now(), ended_by = p_client_id WHERE id = p_id;
-  RETURN 'ended';
+  IF v.ended_at IS NOT NULL OR v.ends_at <= now() THEN RETURN 'already_ended'; END IF;
+  UPDATE public.subscription_offers SET ended_at = now(), ended_by = p_client_id WHERE id = p_id;
+  RETURN CASE WHEN v.starts_at > now() THEN 'cancelled' ELSE 'ended' END;
 END $f$;
 
 REVOKE ALL ON FUNCTION public.get_subscription_offer(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.assert_offer_manager(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.current_subscription_offer_id(text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.displayed_subscription_offers(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.list_subscription_offers(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.end_subscription_offer(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_subscription_offer(text) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.displayed_subscription_offers(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.list_subscription_offers(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.end_subscription_offer(uuid, uuid) TO service_role;
 

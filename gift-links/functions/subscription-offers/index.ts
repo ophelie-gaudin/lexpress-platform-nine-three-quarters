@@ -4,7 +4,7 @@
 //                            et pour chaque site l'offre affichée en ce moment
 //   POST   { sites, ends_at, starts_at?, url?, label?, name?, request_id? }   crée une offre
 //                            (même request_id renvoyé = la même offre, jamais un doublon)
-//   DELETE ?id=<uuid>        fin anticipée : supprime une offre à venir, termine une offre en cours
+//   DELETE ?id=<uuid>        fin anticipée : annule une offre à venir, termine une offre en cours
 //
 // AUTHENTIFICATION : le même jeton par service que create-gift-links, dans `x-gift-service-token`.
 // Un jeton valide ne suffit pas : le service doit avoir le droit `manage_offers`, accordé à la main.
@@ -70,12 +70,10 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     const { data, error } = await db.rpc('list_subscription_offers', { p_client_id: clientId });
     if (error) return refusBase(error, clientName, 'liste');
-    // L'offre affichée vient de la base, de la même fonction que la page : jamais recalculée ici.
-    const { data: affichees, error: erreurAffichees } = await db.rpc('displayed_subscription_offers', { p_client_id: clientId });
-    if (erreurAffichees) return refusBase(erreurAffichees, clientName, 'liste');
-    const lignes = (data ?? []) as Array<Record<string, unknown>>;
-    const displayed = Object.fromEntries(((affichees ?? []) as Array<{ site: string; id: string | null }>).map((a) => [a.site, a.id ?? null]));
-    return json({ offers: lignes.map((l) => offrePublique(l)), displayed_now: displayed, truncated: lignes.length >= 500, client: clientName });
+    // Un seul appel : liste, offre affichée par site (la fonction de la page) et statuts viennent de la
+    // même photographie de la base. Rien n'est recalculé ici.
+    const liste = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
+    return json({ ...liste, client: clientName });
   }
 
   if (req.method === 'DELETE') {

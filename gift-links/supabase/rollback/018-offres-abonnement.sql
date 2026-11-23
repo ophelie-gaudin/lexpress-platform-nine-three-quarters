@@ -8,7 +8,6 @@ SET LOCAL lock_timeout = '3s';
 DROP FUNCTION IF EXISTS public.get_subscription_offer(text);
 DROP FUNCTION IF EXISTS public.current_subscription_offer_id(text);
 DROP FUNCTION IF EXISTS public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text);
-DROP FUNCTION IF EXISTS public.displayed_subscription_offers(uuid);
 DROP FUNCTION IF EXISTS public.list_subscription_offers(uuid);
 DROP FUNCTION IF EXISTS public.end_subscription_offer(uuid, uuid);
 DROP FUNCTION IF EXISTS public.assert_offer_manager(uuid);

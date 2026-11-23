@@ -26,7 +26,7 @@ export function familleUrl(url) {
 
 // ISO 8601 avec fuseau explicite : « 2026-11-30T23:59:00+01:00 » ou « …Z ». Sans fuseau, la même
 // chaîne désigne deux instants selon la machine qui la lit ; on préfère refuser que deviner.
-const ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2})(\.\d{1,6})?)?(Z|[+-](\d{2}):(\d{2}))$/;
+const ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:(\d{2})(\.\d{1,3})?)?(Z|[+-](\d{2}):(\d{2}))$/;
 function date(valeur, champ) {
   const m = typeof valeur === 'string' ? ISO.exec(valeur) : null;
   if (!m) {
@@ -71,7 +71,10 @@ export function validerOffre(corps, maintenant = new Date()) {
     debut = date(corps.starts_at, 'starts_at');
     if (debut.erreur) return debut;
   }
-  if (fin.date.getTime() <= maintenant.getTime()) return { erreur: 'ends_at doit être dans le futur' };
+  // Avec un request_id, un rejeu tardif doit retrouver l'offre déjà créée : la base vérifie le futur
+  // seulement si elle crée vraiment une offre.
+  const rejouable = typeof corps.request_id === 'string';
+  if (!rejouable && fin.date.getTime() <= maintenant.getTime()) return { erreur: 'ends_at doit être dans le futur' };
   if (debut.date && fin.date.getTime() <= debut.date.getTime()) return { erreur: 'ends_at doit être après starts_at' };
 
   let url = null;
@@ -139,6 +142,7 @@ export function offrePublique(ligne, maintenant = new Date()) {
     id: ligne.id, name: ligne.name ?? null, sites: ligne.sites,
     starts_at: ligne.starts_at, ends_at: ligne.ends_at,
     url: ligne.url ?? null, label: ligne.label ?? null,
-    status: fin <= t ? 'ended' : debut > t ? 'scheduled' : 'active',
+    ended_at: ligne.ended_at ?? null,
+    status: ligne.ended_at || fin <= t ? 'ended' : debut > t ? 'scheduled' : 'active',
   };
 }
