@@ -1,0 +1,111 @@
+{
+ "date": "2026-11-24",
+ "environnement": "TEST",
+ "ref": "gsvvcrhagatwjwyyjkli",
+ "migration": "019-identifiant-envoi-elargi.sql",
+ "lien": {
+  "edition": "FR",
+  "token": "7c363606dcc6421fbc6ba90d6b42c5a4"
+ },
+ "rpc": "get_gift_article_for_edition_v2",
+ "role": "anon",
+ "empreinte_fonction": {
+  "avant": "254b463cfdba9db7bdc326f40d38d788",
+  "prod_avant_lecture_seule": "254b463cfdba9db7bdc326f40d38d788",
+  "apres_019": "49b03243c26cf98b4586a074ddcb0a91",
+  "apres_retour_arriere": "254b463cfdba9db7bdc326f40d38d788",
+  "apres_reapplication": "49b03243c26cf98b4586a074ddcb0a91"
+ },
+ "droits": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+ "lectures": [
+  {
+   "id": 55,
+   "etape": "avant 019",
+   "s": "123456789012",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 56,
+   "etape": "019",
+   "s": "0123456789abcdef0123456789abcdef",
+   "http": 200,
+   "status": "ok",
+   "send_id": "0123456789abcdef0123456789abcdef"
+  },
+  {
+   "id": 57,
+   "etape": "019",
+   "s": "123456789012",
+   "http": 200,
+   "status": "ok",
+   "send_id": "123456789012"
+  },
+  {
+   "id": 58,
+   "etape": "019",
+   "s": "123 456",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 59,
+   "etape": "019",
+   "s": "prenom.nom@exemple.fr",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 60,
+   "etape": "019",
+   "s": "<script>",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 61,
+   "etape": "019",
+   "s": "A×65",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 62,
+   "etape": "019",
+   "s": "é123",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 63,
+   "etape": "retour arrière",
+   "s": "123456789012",
+   "http": 200,
+   "status": "ok",
+   "send_id": null
+  },
+  {
+   "id": 64,
+   "etape": "retour arrière",
+   "s": "0123456789abcdef0123456789abcdef",
+   "http": 200,
+   "status": "ok",
+   "send_id": "0123456789abcdef0123456789abcdef"
+  },
+  {
+   "id": 65,
+   "etape": "ré-application",
+   "s": "123456789012",
+   "http": 200,
+   "status": "ok",
+   "send_id": "123456789012"
+  }
+ ],
+ "marqueur": "utm_source = 'Recette019'"
+}

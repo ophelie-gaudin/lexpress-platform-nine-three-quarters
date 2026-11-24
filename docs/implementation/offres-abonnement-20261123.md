@@ -83,6 +83,50 @@ Limites connues :
   Lovable.
 - Pas de plafond de durée d’offre ni de nombre d’offres.
 
+## Ajout du 24/11 : `s` accepte l’identifiant d’un e-mail HubSpot (019)
+
+Décision d’Ophélie du 24/11 (choix 1B). Le responsable CRM branche un module « Article offert » dans
+les e-mails HubSpot (jeton `hubspot-emails`) et veut l’identifiant de l’e-mail dans `s`, `at_campaign`
+servant déjà à autre chose. Jusqu’ici, la lecture ne gardait que 32 hexadécimaux : un identifiant
+numérique était enregistré vide.
+
+- `gift-links/supabase/019-identifiant-envoi-elargi.sql` : seule la ligne d’assainissement de
+  `get_gift_article_for_edition` change, en `^[A-Za-z0-9_-]{1,64}$`. Même signature, `CREATE OR
+  REPLACE` sans `DROP` : `get_gift_article` et `get_gift_article_for_edition_v2` en profitent sans
+  être recréées, droits réaffirmés à l’identique. Pas de `CHECK` : une valeur hors forme reste
+  `NULL`, l’article s’affiche. Rejouable.
+- `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` : remet la définition exacte de 015
+  et le commentaire de colonne. Les identifiants déjà enregistrés restent (purge à 90 jours).
+- `validate-send-id.mjs` (dans `npm test`) : 32 hexa, identifiant numérique, valeurs bricolées,
+  refus inchangés, purge, retour arrière et rejeu.
+- Lecteur : **rien à changer, rien à publier** — il transmet `s` tel quel à la RPC et le recopie sur
+  le bouton. Liste blanche des paramètres inchangée.
+
+Fait le 24/11/2026 sur TEST (`gsvvcrhagatwjwyyjkli`) : 019 appliquée, trois cas vérifiés par la RPC
+publique et en base, retour arrière puis ré-application vérifiés. Preuves : § « Recette 019 » du
+compte rendu de PR.
+
+**Ordre de déploiement PROD** : indépendant de 018 et du lecteur. L’appliquer après 018 (ordre des
+numéros) et **avant le premier e-mail HubSpot qui porte `s`** ; un e-mail parti avant reste lisible,
+seule son attribution est perdue. Étape 1 bis ci-dessous.
+
+Recette TEST du 24/11 (`docs/evidence/send-id-019-test-20261124.json`), lien FR
+`7c363606…c5a4`, RPC `get_gift_article_for_edition_v2` appelée avec la clé `anon`, lectures marquées
+`at_medium=Recette019` (ids 55 à 65 de `gift_link_opens`) :
+
+| Cas | Réponse | `send_id` enregistré |
+| --- | --- | --- |
+| avant 019, `123456789012` | 200, `ok`, corps | NULL |
+| 32 hexadécimaux | 200, `ok`, corps | la valeur |
+| `123456789012` | 200, `ok`, corps | la valeur |
+| espace, `@`, `<`, 65 caractères, accent | 200, `ok`, corps | NULL |
+| après retour arrière : `123456789012` / 32 hexa | 200, `ok`, corps | NULL / la valeur |
+| après ré-application : `123456789012` | 200, `ok`, corps | la valeur |
+
+Empreinte de la fonction : `254b463c…` avant, `49b03243…` après, `254b463c…` après retour arrière ;
+droits identiques à chaque étape. Effacer ces lectures de recette si besoin :
+`DELETE FROM public.gift_link_opens WHERE utm_source = 'Recette019';`
+
 ## Gestes proposés — après accord écrit uniquement
 
 Ordre : 1 migration, 2 fonction, 3 droit du jeton marketing, 4 lecteur. Le lecteur est
@@ -148,6 +192,36 @@ Contrôle d’exposition par l’API REST avec la clé publique du lecteur : `PO
 Puis `GET /rest/v1/subscription_offers` avec la même clé → refus (401 ou 403), jamais une liste.
 
 Retour arrière : voir § 5.
+
+### 1 bis. Migration 019 (PROD `ovifzentveeehhtlnugk`)
+
+Contrôle préalable en lecture seule — la définition doit être celle de 015, dont 019 repart :
+
+```sql
+SELECT md5(pg_get_functiondef('public.get_gift_article_for_edition(text,text,text,text,text,text,text)'::regprocedure));
+-- attendu : 254b463cfdba9db7bdc326f40d38d788 (relevé PROD et TEST du 24/11). Autre valeur : s’arrêter.
+```
+
+Après accord, même préparation et même `curl` qu’au § 1, avec
+`gift-links/supabase/019-identifiant-envoi-elargi.sql` (fichier JSON
+`/tmp/platform934-envoi-migration.json`).
+
+Contrôles après, en lecture seule :
+
+```sql
+SELECT md5(pg_get_functiondef(oid)), prosrc LIKE '%^[A-Za-z0-9_-]{1,64}$%' AS elargi, proacl::text
+  FROM pg_proc WHERE oid = 'public.get_gift_article_for_edition(text,text,text,text,text,text,text)'::regprocedure;
+-- attendu : 49b03243c26cf98b4586a074ddcb0a91 (TEST après 019), true,
+--           {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+SELECT count(*) FROM pg_proc WHERE proname = 'get_gift_article_for_edition';  -- 1
+```
+
+Pas de lecture d’essai en PROD : elle compterait une ouverture fictive. La première lecture d’un
+e-mail HubSpot se vérifie ensuite par
+`SELECT send_id, opened_at FROM public.gift_link_opens WHERE utm_source = '<at_medium des e-mails>' ORDER BY id DESC LIMIT 5;`.
+
+Retour arrière : appliquer `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` par le
+même endpoint. Aucun ordre à respecter avec le lecteur.
 
 ### 2. Fonction `subscription-offers`
 
