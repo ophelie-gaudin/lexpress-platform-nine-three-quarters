@@ -448,11 +448,49 @@ créer une nouvelle.
 
 La page lit l’offre désignée à l’affichage, puis toutes les 5 minutes et à sa date de fin tant que la
 page reste ouverte : une offre créée est visible dès la page suivante ; à sa date de fin, elle disparaît
-tout de suite des pages ouvertes. Une offre terminée en avance disparaît à la relecture réussie suivante :
+tout de suite des pages ouvertes. Une offre terminée en avance disparaît à la relecture suivante :
 normalement sous 5 minutes dans un onglet actif (un onglet masqué relit à son retour). Si la base ne
-répond pas, la page garde la dernière réponse valide jusqu’à la relecture réussie suivante, et au plus
-jusqu’à la date de fin de l’offre. Sans `offre`
-dans le lien, la page ne lit aucune offre.
+répond pas, la page affiche le bouton par défaut jusqu’à la relecture réussie suivante (jamais une
+offre qui aurait pu être terminée entre-temps). Sans `offre` dans le lien, la page ne lit aucune offre.
+
+### Une offre qui revient chaque année (Black Friday 2026, 2027…)
+
+Le **`code` est unique pour toujours**, quelles que soient les dates : une offre terminée garde son
+code, et l’API refuse (`409`) toute nouvelle offre qui le reprend, même des années plus tard et même
+si les périodes ne se chevauchent pas. C’est voulu : un lien envoyé en 2026 avec
+`?offre=black-friday-2026` ne doit jamais afficher l’offre de 2027 ; il retombe sur le bouton par
+défaut une fois l’offre de 2026 terminée.
+
+Pour une opération qui revient, **mettre l’année (ou la période) dans le code** :
+
+| Opération | `code` | `name` (libre) | `request_id` |
+| --- | --- | --- | --- |
+| Black Friday 2026 | `black-friday-2026` | `Black Friday` | `black-friday-2026-fr-1` |
+| Black Friday 2027 | `black-friday-2027` | `Black Friday` | `black-friday-2027-fr-1` |
+| Une seconde vague la même année | `black-friday-2026-b` | `Black Friday` | `black-friday-2026-b-fr-1` |
+
+- **`name`** n’est qu’un nom interne : il peut se répéter d’une année sur l’autre, sans règle de
+  période.
+- **`request_id`** sert à rejouer la même demande sans doublon : en prendre un nouveau pour chaque
+  nouvelle offre (le même `request_id` avec d’autres valeurs est refusé, `400`).
+- **Changer une date, un texte ou un lien** d’une offre déjà diffusée n’est pas possible : la
+  terminer (`DELETE ?code=…`), puis en créer une nouvelle avec un **nouveau code**. Les liens déjà
+  envoyés avec l’ancien code afficheront alors le bouton par défaut : décider de la date de fin
+  **avant** les envois.
+
+Avant un envoi, vérifier l’offre sans ouvrir d’article (cela ne compte aucune lecture) :
+
+```sh
+curl --silent -X POST \
+  'https://ovifzentveeehhtlnugk.supabase.co/rest/v1/rpc/get_subscription_offer' \
+  -H 'apikey: CLE_PUBLIQUE_ANON' -H 'Authorization: Bearer CLE_PUBLIQUE_ANON' \
+  -H 'Content-Type: application/json' \
+  -d '{"p_site": "www.lexpress.fr", "p_code": "black-friday-2026"}'
+```
+
+Réponse : `[{"label": …, "url": …, "ends_at": …}]` si l’offre est affichable maintenant sur ce site,
+`[]` sinon (code inconnu, autre site, pas encore commencée ou terminée). La clé publique `anon` est
+celle de la page de lecture (`src/lib/deployment.ts` du dépôt GitLab de la page).
 
 ### Suivi des clics sur « S'abonner » (UTM)
 
