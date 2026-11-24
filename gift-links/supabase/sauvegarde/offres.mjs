@@ -2,9 +2,13 @@
 // `api_clients.manage_offers`. Revue adverse du 24/11, constat 3 : le retour arrière de 018 supprime la
 // table et la colonne ; sans copie, les offres et les droits accordés sont perdus.
 //
-// Deux sous-commandes, qui n'écrivent que sur la sortie standard (aucun réseau, aucun secret) :
-//   node gift-links/supabase/sauvegarde/offres.mjs sql-sauvegarde            > sauvegarde.sql
-//   node gift-links/supabase/sauvegarde/offres.mjs sql-restauration <fichier> > restauration.sql
+// Trois sous-commandes, qui n'écrivent que sur la sortie standard (aucun réseau, aucun secret) :
+//   node gift-links/supabase/sauvegarde/offres.mjs sql-sauvegarde               > sauvegarde.sql
+//   node gift-links/supabase/sauvegarde/offres.mjs sql-retour-arriere <fichier> > retour-arriere.sql
+//   node gift-links/supabase/sauvegarde/offres.mjs sql-restauration <fichier>   > restauration.sql
+// `retour-arriere.sql` est le retour arrière de 018 GARDÉ par la sauvegarde : il verrouille les tables, vérifie
+// dans la même transaction que offres et droits sont encore exactement ceux de la sauvegarde, puis seulement
+// supprime. Une offre créée, terminée ou modifiée après la sauvegarde l'arrête : rien n'est perdu en silence.
 // `sauvegarde.sql` est une seule requête SELECT, en lecture seule : sa réponse (telle que la rend l'API
 // Management, `[{"sauvegarde": {…}}]`, ou le document seul) est le fichier de sauvegarde.
 // `restauration.sql` remet offres et droits après ré-application de 018, dans une transaction qui
@@ -44,34 +48,88 @@ FROM (SELECT ${OFFRES} AS offres,
 `;
 }
 
-/** Le document de sauvegarde, depuis le fichier tel que l'API Management l'a rendu, ou seul. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+const texteOuNul = (v) => v === null || typeof v === 'string';
+
+/** Le document de sauvegarde, depuis le fichier tel que l'API Management l'a rendu, ou seul. Vérifie sa forme
+ * ligne à ligne ; l'empreinte et l'égalité avec la base sont vérifiées en SQL (retour arrière gardé, restauration). */
 export function lireSauvegarde(texte) {
   let doc = JSON.parse(texte);
   if (Array.isArray(doc) && doc.length === 1 && doc[0] && typeof doc[0] === 'object' && 'sauvegarde' in doc[0]) doc = doc[0].sauvegarde;
-  if (!doc || typeof doc !== 'object' || doc.format !== FORMAT || !Array.isArray(doc.offres) || !Array.isArray(doc.droits) || typeof doc.empreinte !== 'string') {
+  if (!doc || typeof doc !== 'object' || doc.format !== FORMAT || !Array.isArray(doc.offres) || !Array.isArray(doc.droits)
+      || typeof doc.empreinte !== 'string' || !/^[0-9a-f]{32}$/.test(doc.empreinte) || typeof doc.pris_le !== 'string' || !DATE.test(doc.pris_le)) {
     throw new Error(`sauvegarde illisible : format ${FORMAT} attendu`);
   }
+  doc.offres.forEach((o, i) => {
+    const ok = o && typeof o === 'object' && Object.keys(o).sort().join(',') === COLONNES.join(',')
+      && UUID.test(o.id) && Array.isArray(o.sites) && o.sites.length > 0 && o.sites.every((x) => typeof x === 'string')
+      && DATE.test(o.starts_at) && DATE.test(o.ends_at) && DATE.test(o.created_at) && (o.ended_at === null || DATE.test(o.ended_at))
+      && (o.created_by === null || UUID.test(o.created_by)) && (o.ended_by === null || UUID.test(o.ended_by))
+      && texteOuNul(o.name) && texteOuNul(o.url) && texteOuNul(o.label) && texteOuNul(o.request_id);
+    if (!ok) throw new Error(`sauvegarde incomplète : offre n° ${i + 1}`);
+  });
+  doc.droits.forEach((d, i) => {
+    if (!d || typeof d !== 'object' || Object.keys(d).sort().join(',') !== 'id,name' || !UUID.test(d.id) || typeof d.name !== 'string') {
+      throw new Error(`sauvegarde incomplète : droit n° ${i + 1}`);
+    }
+  });
   return doc;
+}
+
+const enBase64 = (doc) => Buffer.from(JSON.stringify(doc), 'utf8').toString('base64');
+// Contrôles communs : document intact, puis égalité exacte de la base avec lui (offres et droits).
+const verifierDocument = `  IF doc->>'format' IS DISTINCT FROM '${FORMAT}' THEN RAISE EXCEPTION '%: format de sauvegarde inattendu', etape; END IF;
+  IF md5((doc->'offres')::text || (doc->'droits')::text) IS DISTINCT FROM doc->>'empreinte' THEN
+    RAISE EXCEPTION '%: sauvegarde altérée (empreinte différente)', etape;
+  END IF;`;
+const verifierBase = (message) => `  IF ${OFFRES} IS DISTINCT FROM doc->'offres' THEN
+    RAISE EXCEPTION '%: offres différentes de la sauvegarde (${message})', etape;
+  END IF;
+  IF (SELECT coalesce(jsonb_agg(c.id ORDER BY c.id), '[]'::jsonb) FROM public.api_clients c WHERE c.manage_offers)
+     IS DISTINCT FROM (SELECT coalesce(jsonb_agg((e->>'id')::uuid ORDER BY (e->>'id')::uuid), '[]'::jsonb) FROM jsonb_array_elements(doc->'droits') e) THEN
+    RAISE EXCEPTION '%: droits manage_offers différents de la sauvegarde (${message})', etape;
+  END IF;`;
+
+/** Retour arrière de 018 gardé par la sauvegarde : refuse si la base a changé depuis. */
+export function sqlRetourArriere(doc, rollback = readFileSync(new URL('../rollback/018-offres-abonnement.sql', import.meta.url), 'utf8')) {
+  const corps = rollback.split('\n').filter((l) => !/^\s*(--|BEGIN;|COMMIT;|SET LOCAL lock_timeout)/.test(l) && l.trim() !== '').join('\n');
+  return `-- Retour arrière de 018 GARDÉ par la sauvegarde du ${String(doc.pris_le).replace(/[^0-9TZ:.-]/g, '')} (${doc.offres.length} offre(s), ${doc.droits.length} droit(s)).
+-- Généré par offres.mjs. Refuse, sans rien supprimer, si offres ou droits ont changé depuis la sauvegarde :
+-- reprendre alors une sauvegarde. Corps : rollback/018-offres-abonnement.sql.
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+-- Plus aucune écriture possible sur ces tables jusqu'à la fin : rien ne change entre le contrôle et le DROP.
+LOCK TABLE public.subscription_offers, public.api_clients IN EXCLUSIVE MODE;
+DO $garde$
+DECLARE
+  doc jsonb := convert_from(decode('${enBase64(doc)}', 'base64'), 'UTF8')::jsonb;
+  etape text := 'retour arrière refusé';
+BEGIN
+${verifierDocument}
+${verifierBase('modifiés après la sauvegarde : la reprendre')}
+END $garde$;
+${corps}
+COMMIT;
+`;
 }
 
 export function sqlRestauration(doc) {
   // Le document voyage en base64 : aucune apostrophe, aucun dollar ni retour à la ligne d'un libellé ou
   // d'un nom ne peut sortir de la chaîne SQL.
-  const b64 = Buffer.from(JSON.stringify(doc), 'utf8').toString('base64');
   return `-- Restauration des offres (018) et des droits manage_offers depuis la sauvegarde du ${String(doc.pris_le).replace(/[^0-9TZ:.-]/g, '')}.
 -- ${doc.offres.length} offre(s), ${doc.droits.length} jeton(s) avec le droit. Généré par offres.mjs. Rejouable.
 -- Prérequis : 018 ré-appliquée. Tout écart arrête la transaction : rien n'est écrit.
+-- Sur la base encore intacte, elle ne change rien et prouve que la sauvegarde est restaurable (essai à blanc).
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 DO $restauration$
 DECLARE
-  doc jsonb := convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb;
+  doc jsonb := convert_from(decode('${enBase64(doc)}', 'base64'), 'UTF8')::jsonb;
+  etape text := 'restauration';
   v text;
 BEGIN
-  IF doc->>'format' IS DISTINCT FROM '${FORMAT}' THEN RAISE EXCEPTION 'restauration : format de sauvegarde inattendu'; END IF;
-  IF md5((doc->'offres')::text || (doc->'droits')::text) IS DISTINCT FROM doc->>'empreinte' THEN
-    RAISE EXCEPTION 'restauration : sauvegarde altérée (empreinte différente)';
-  END IF;
+${verifierDocument}
   IF to_regclass('public.subscription_offers') IS NULL
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'api_clients' AND column_name = 'manage_offers') THEN
     RAISE EXCEPTION 'restauration : appliquer 018 avant de restaurer';
@@ -98,13 +156,7 @@ BEGIN
    WHERE id IN (SELECT (e->>'id')::uuid FROM jsonb_array_elements(doc->'droits') e) AND NOT manage_offers;
 
   -- Vérification : la table et les droits sont exactement ceux de la sauvegarde, ni plus ni moins.
-  IF ${OFFRES} IS DISTINCT FROM doc->'offres' THEN
-    RAISE EXCEPTION 'restauration : offres différentes de la sauvegarde après restauration (offre déjà présente et modifiée, ou offre en plus)';
-  END IF;
-  IF (SELECT coalesce(jsonb_agg(c.id ORDER BY c.id), '[]'::jsonb) FROM public.api_clients c WHERE c.manage_offers)
-     IS DISTINCT FROM (SELECT coalesce(jsonb_agg((e->>'id')::uuid ORDER BY (e->>'id')::uuid), '[]'::jsonb) FROM jsonb_array_elements(doc->'droits') e) THEN
-    RAISE EXCEPTION 'restauration : droits manage_offers différents de la sauvegarde (un jeton en a reçu un autre entre-temps)';
-  END IF;
+${verifierBase('offre déjà présente et modifiée, offre en plus, ou droit accordé entre-temps')}
 END $restauration$;
 COMMIT;
 `;
@@ -114,8 +166,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const [commande, fichier] = process.argv.slice(2);
   if (commande === 'sql-sauvegarde') process.stdout.write(sqlSauvegarde());
   else if (commande === 'sql-restauration' && fichier) process.stdout.write(sqlRestauration(lireSauvegarde(readFileSync(fichier, 'utf8'))));
+  else if (commande === 'sql-retour-arriere' && fichier) process.stdout.write(sqlRetourArriere(lireSauvegarde(readFileSync(fichier, 'utf8'))));
   else {
-    process.stderr.write('usage : offres.mjs sql-sauvegarde | offres.mjs sql-restauration <fichier de sauvegarde>\n');
+    process.stderr.write('usage : offres.mjs sql-sauvegarde | sql-retour-arriere <fichier de sauvegarde> | sql-restauration <fichier de sauvegarde>\n');
     process.exit(2);
   }
 }
