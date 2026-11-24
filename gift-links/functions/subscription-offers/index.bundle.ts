@@ -9,7 +9,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // s'explique, champ par champ, au lieu d'une erreur PostgreSQL. Les deux règles disent la même chose ;
 // le test les confronte sur les mêmes cas.
 
-const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id']);
+const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id', 'code']);
+// Identifiant public de l'offre (020), valeur du paramètre `offre` de l'URL de l'article offert.
+// Même règle que offer_code_valid() en SQL.
+const CODE = /^[a-z0-9-]{3,40}$/;
+const PARAMETRE_OFFRE = 'offre';
 const OFFRE_SITES = Object.freeze({
   'www.lexpress.fr': Object.freeze({ famille: 'fr', langue: 'fr' }),
   'www.lexpress.eu': Object.freeze({ famille: 'eu', langue: 'en' }),
@@ -126,6 +130,14 @@ function validerOffre(corps, maintenant = new Date()) {
     requestId = corps.request_id;
   }
 
+  let code = null;
+  if (corps.code !== undefined && corps.code !== null) {
+    if (typeof corps.code !== 'string' || !CODE.test(corps.code)) {
+      return { erreur: 'code : 3 à 40 caractères parmi a-z (minuscules sans accent), 0-9 et -, par exemple black-friday-2026 ; absent, l’API en tire un' };
+    }
+    code = corps.code;
+  }
+
   return {
     offre: {
       p_sites: [...sites],
@@ -135,11 +147,13 @@ function validerOffre(corps, maintenant = new Date()) {
       p_label: label,
       p_name: name,
       p_request_id: requestId,
+      p_code: code,
     },
   };
 }
 
-// Identifiant d'offre dans l'URL d'une fin anticipée.
+// Identifiant d'offre dans l'URL d'une fin anticipée : son id, ou son code.
+const estCode = (v) => typeof v === 'string' && CODE.test(v);
 const estUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // Ce que la réponse montre d'une offre : tout sauf les identifiants internes des services.
@@ -147,28 +161,33 @@ function offrePublique(ligne, maintenant = new Date()) {
   const t = maintenant.getTime();
   const debut = Date.parse(ligne.starts_at), fin = Date.parse(ligne.ends_at);
   return {
-    id: ligne.id, name: ligne.name ?? null, sites: ligne.sites,
+    id: ligne.id, code: ligne.code, name: ligne.name ?? null, sites: ligne.sites,
     starts_at: ligne.starts_at, ends_at: ligne.ends_at,
     url: ligne.url ?? null, label: ligne.label ?? null,
     ended_at: ligne.ended_at ?? null,
     status: ligne.ended_at || fin <= t ? 'ended' : debut > t ? 'scheduled' : 'active',
+    // Ce qu'il faut ajouter à l'URL de l'article offert pour afficher cette offre.
+    link_parameter: `${PARAMETRE_OFFRE}=${ligne.code}`,
   };
 }
 
-// /subscription-offers — l'offre d'abonnement du moment, déclarée par le marketing (migration 018).
+// /subscription-offers — les offres d'abonnement, déclarées par le marketing (migrations 018 et 020).
 //
-//   GET                      liste : offres à venir, en cours, terminées depuis moins de 30 jours,
-//                            et pour chaque site l'offre affichée en ce moment
-//   POST   { sites, ends_at, starts_at?, url?, label?, name?, request_id? }   crée une offre
-//                            (même request_id renvoyé = la même offre, jamais un doublon)
-//   DELETE ?id=<uuid>        fin anticipée : annule une offre à venir, termine une offre en cours
+// Une offre ne s'affiche QUE sur un article offert dont l'URL la désigne par son code (020) :
+// …/a/<jeton>?offre=<code>. Sans ce paramètre, le bouton par défaut de l'édition. Plusieurs offres
+// peuvent coexister, chacune activée par son propre lien.
+//
+//   GET                      liste : offres à venir, en cours, terminées depuis moins de 30 jours (avec code)
+//   POST   { sites, ends_at, starts_at?, url?, label?, name?, request_id?, code? }   crée une offre
+//                            (code absent : l'API en tire un ; même request_id = la même offre)
+//   DELETE ?id=<uuid> | ?code=<code>   fin anticipée : annule une offre à venir, termine une offre en cours
 //
 // AUTHENTIFICATION : le même jeton par service que create-gift-links, dans `x-gift-service-token`.
 // Un jeton valide ne suffit pas : le service doit avoir le droit `manage_offers`, accordé à la main.
 // L'agent WhatsApp crée des liens ; il ne doit pas pouvoir changer le bouton de toutes les pages.
 //
 // La page de lecture ne passe JAMAIS par ici : elle lit l'offre en cours par la RPC publique
-// get_subscription_offer, qui ne rend que libellé, URL et date de fin.
+// get_subscription_offer(site, code), qui ne rend que libellé, URL et date de fin.
 
 const env = (k: string) => Deno.env.get(k) ?? '';
 const json = (corps: unknown, status = 200) =>
@@ -182,11 +201,15 @@ const journal = (niveau: 'error' | 'warn' | 'info', evenement: string, details: 
   else console.log(ligne);
 };
 
-// Erreur de la base → réponse. Le droit manquant est un 403 ; une règle de 018 violée, un 400.
+// Erreur de la base → réponse. Le droit manquant est un 403 ; un code déjà pris, un 409 ; une règle violée, un 400.
 const refusBase = (error: { code?: string; message?: string }, client: string, geste: string) => {
   if (error.code === '42501') {
     journal('warn', 'offres_refusees', { client, geste, cause: 'droit manage_offers absent' });
     return json({ error: 'ce service n’a pas le droit de gérer les offres' }, 403);
+  }
+  if (error.code === '23505') {
+    journal('warn', 'offre_invalide', { client, geste, message: error.message });
+    return json({ error: 'code déjà utilisé par une autre offre (un code n’est jamais réattribué) : en choisir un autre' }, 409);
   }
   if (error.code === '22023' || error.code === '23514') {
     journal('warn', 'offre_invalide', { client, geste, message: error.message });
@@ -225,21 +248,28 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     const { data, error } = await db.rpc('list_subscription_offers', { p_client_id: clientId });
     if (error) return refusBase(error, clientName, 'liste');
-    // Un seul appel : liste, offre affichée par site (la fonction de la page) et statuts viennent de la
-    // même photographie de la base. Rien n'est recalculé ici.
+    // Un seul appel : liste et statuts viennent de la même photographie de la base. Rien n'est recalculé ici.
     const liste = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
-    return json({ ...liste, client: clientName });
+    return json({ ...liste, link_parameter: 'offre', client: clientName });
   }
 
   if (req.method === 'DELETE') {
-    const id = new URL(req.url).searchParams.get('id');
-    if (!estUuid(id)) return json({ error: 'paramètre id manquant ou mal formé (uuid attendu)' }, 400);
-    const { data, error } = await db.rpc('end_subscription_offer', { p_client_id: clientId, p_id: id });
+    const params = new URL(req.url).searchParams;
+    const id = params.get('id');
+    const code = params.get('code');
+    // Un seul désignateur, bien formé : jamais deviner laquelle des deux offres terminer.
+    if ((id === null) === (code === null) || (id !== null && !estUuid(id)) || (code !== null && !estCode(code))) {
+      return json({ error: 'désigner l’offre par ?id=<uuid> ou par ?code=<code>, un seul des deux' }, 400);
+    }
+    const { data, error } = id !== null
+      ? await db.rpc('end_subscription_offer', { p_client_id: clientId, p_id: id })
+      : await db.rpc('end_subscription_offer_by_code', { p_client_id: clientId, p_code: code });
     if (error) return refusBase(error, clientName, 'fin');
     const resultat = Array.isArray(data) ? data[0] : data;
-    if (resultat === 'unknown') return json({ error: 'offre inconnue', id, client: clientName }, 404);
-    journal('info', 'offre_terminee', { client: clientName, id, result: resultat });
-    return json({ id, result: resultat, client: clientName });
+    const cible = id !== null ? { id } : { code };
+    if (resultat === 'unknown') return json({ error: 'offre inconnue', ...cible, client: clientName }, 404);
+    journal('info', 'offre_terminee', { client: clientName, ...cible, result: resultat });
+    return json({ ...cible, result: resultat, client: clientName });
   }
 
   let corps: unknown;
@@ -254,6 +284,6 @@ Deno.serve(async (req) => {
   const { data, error } = await db.rpc('create_subscription_offer', { p_client_id: clientId, ...valide.offre });
   if (error) return refusBase(error, clientName, 'création');
   const ligne = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
-  journal('info', 'offre_creee', { client: clientName, id: ligne.id, sites: ligne.sites, ends_at: ligne.ends_at });
+  journal('info', 'offre_creee', { client: clientName, id: ligne.id, code: ligne.code, sites: ligne.sites, ends_at: ligne.ends_at });
   return json({ offer: offrePublique(ligne), client: clientName }, 201);
 });

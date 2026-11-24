@@ -4,7 +4,11 @@
 // s'explique, champ par champ, au lieu d'une erreur PostgreSQL. Les deux règles disent la même chose ;
 // le test les confronte sur les mêmes cas.
 
-export const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id']);
+export const OFFRE_CLES = Object.freeze(['sites', 'ends_at', 'starts_at', 'url', 'label', 'name', 'request_id', 'code']);
+// Identifiant public de l'offre (020), valeur du paramètre `offre` de l'URL de l'article offert.
+// Même règle que offer_code_valid() en SQL.
+export const CODE = /^[a-z0-9-]{3,40}$/;
+export const PARAMETRE_OFFRE = 'offre';
 export const OFFRE_SITES = Object.freeze({
   'www.lexpress.fr': Object.freeze({ famille: 'fr', langue: 'fr' }),
   'www.lexpress.eu': Object.freeze({ famille: 'eu', langue: 'en' }),
@@ -121,6 +125,14 @@ export function validerOffre(corps, maintenant = new Date()) {
     requestId = corps.request_id;
   }
 
+  let code = null;
+  if (corps.code !== undefined && corps.code !== null) {
+    if (typeof corps.code !== 'string' || !CODE.test(corps.code)) {
+      return { erreur: 'code : 3 à 40 caractères parmi a-z (minuscules sans accent), 0-9 et -, par exemple black-friday-2026 ; absent, l’API en tire un' };
+    }
+    code = corps.code;
+  }
+
   return {
     offre: {
       p_sites: [...sites],
@@ -130,11 +142,13 @@ export function validerOffre(corps, maintenant = new Date()) {
       p_label: label,
       p_name: name,
       p_request_id: requestId,
+      p_code: code,
     },
   };
 }
 
-// Identifiant d'offre dans l'URL d'une fin anticipée.
+// Identifiant d'offre dans l'URL d'une fin anticipée : son id, ou son code.
+export const estCode = (v) => typeof v === 'string' && CODE.test(v);
 export const estUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // Ce que la réponse montre d'une offre : tout sauf les identifiants internes des services.
@@ -142,10 +156,12 @@ export function offrePublique(ligne, maintenant = new Date()) {
   const t = maintenant.getTime();
   const debut = Date.parse(ligne.starts_at), fin = Date.parse(ligne.ends_at);
   return {
-    id: ligne.id, name: ligne.name ?? null, sites: ligne.sites,
+    id: ligne.id, code: ligne.code, name: ligne.name ?? null, sites: ligne.sites,
     starts_at: ligne.starts_at, ends_at: ligne.ends_at,
     url: ligne.url ?? null, label: ligne.label ?? null,
     ended_at: ligne.ended_at ?? null,
     status: ligne.ended_at || fin <= t ? 'ended' : debut > t ? 'scheduled' : 'active',
+    // Ce qu'il faut ajouter à l'URL de l'article offert pour afficher cette offre.
+    link_parameter: `${PARAMETRE_OFFRE}=${ligne.code}`,
   };
 }

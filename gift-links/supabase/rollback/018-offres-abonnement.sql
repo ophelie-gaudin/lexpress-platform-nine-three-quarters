@@ -5,6 +5,13 @@
 -- Liens, articles, lectures et jetons ne sont pas touchés.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DO $ordre$
+BEGIN
+  -- 020 en place : ses fonctions survivraient à la table. Retour arrière de 020 d'abord.
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscription_offers' AND column_name = 'code') THEN
+    RAISE EXCEPTION 'retour arrière de 018 refusé : appliquer d''abord rollback/020-offre-par-parametre.sql';
+  END IF;
+END $ordre$;
 DROP FUNCTION IF EXISTS public.get_subscription_offer(text);
 DROP FUNCTION IF EXISTS public.current_subscription_offer_id(text);
 DROP FUNCTION IF EXISTS public.create_subscription_offer(uuid, text[], timestamptz, timestamptz, text, text, text, text);
