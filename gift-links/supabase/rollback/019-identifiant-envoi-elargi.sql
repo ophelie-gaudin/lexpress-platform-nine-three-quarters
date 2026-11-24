@@ -1,16 +1,86 @@
--- Retour arrière de 019 : supprime `get_gift_article_for_edition_v3` et remet le commentaire de colonne de
--- 005. ORDRE : la page de !1 appelle v3 ; la retirer d'abord (publication précédente), sinon chaque lecture
--- afficherait l'écran technique. Les anciennes fonctions restent strictes (32 hexadécimaux).
+-- Retour arrière de 019 : `s` redevient « 32 hexadécimaux ou NULL » PARTOUT, v3 comprise.
+-- v3 N'EST PAS SUPPRIMÉE (seconde revue du 24/11) : un onglet déjà chargé sur la page de !1 garde son
+-- JavaScript et continue d'appeler v3 ; la supprimer lui afficherait l'écran technique. v3 garde donc son
+-- contrat (paramètres, colonnes, langue) avec l'assainissement strict de 015. La supprimer plus tard, quand
+-- plus aucune page publiée ne l'appelle (après le retour arrière du lecteur et un délai), par :
+--   DROP FUNCTION public.get_gift_article_for_edition_v3(text,text,text,text,text,text,text);
 -- Remet AUSSI la définition exacte de 015 de `get_gift_article_for_edition` : sans effet si elle l'est
--- déjà, elle répare une base où l'ancienne version de 019 (motif élargi dans cette fonction) avait été
--- appliquée (TEST, 24/11).
+-- déjà, elle répare une base où la première version de 019 (motif élargi dans cette fonction) avait été
+-- appliquée (TEST, 24/11). Ordre indifférent vis-à-vis du lecteur : aucune page ne casse.
 -- Les identifiants déjà enregistrés au nouveau format sont GARDÉS : ce sont des lectures réelles, et la
 -- purge nocturne les efface à 90 jours comme les autres (012). Les effacer tout de suite, si besoin :
 --   UPDATE public.gift_link_opens SET send_id = NULL WHERE send_id !~ '^[0-9a-f]{32}$';
 -- Liens, articles, lectures et jetons ne sont pas touchés. Rejouer 019 ensuite est possible (testé).
 BEGIN;
 SET LOCAL lock_timeout = '3s';
-DROP FUNCTION IF EXISTS public.get_gift_article_for_edition_v3(text,text,text,text,text,text,text);
+-- v3 stricte, si elle existe (sinon rien : base sans 019).
+DO $v3strict$
+BEGIN
+  IF to_regprocedure('public.get_gift_article_for_edition_v3(text,text,text,text,text,text,text)') IS NOT NULL THEN
+    EXECUTE $ddl$
+CREATE OR REPLACE FUNCTION public.get_gift_article_for_edition_v3(p_edition text, p_token text, p_utm_source text DEFAULT NULL::text, p_utm_campaign text DEFAULT NULL::text, p_referrer text DEFAULT NULL::text, p_send_id text DEFAULT NULL::text, p_campaign_group text DEFAULT NULL::text)
+ RETURNS TABLE(status text, canonical_url text, title text, standfirst text, image_url text, body text, section text, author text, published_at timestamp with time zone, language text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $v3$
+DECLARE
+  v_link  public.gift_links%ROWTYPE;
+  v_send  text;
+  v_group text;
+  v_lang  text;
+BEGIN
+  IF p_edition IS NULL OR p_edition NOT IN ('FR','EUR') OR p_token IS NULL OR p_token !~ '^[0-9a-f]{32}$' THEN
+    RETURN QUERY SELECT 'unknown'::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::timestamptz, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_link FROM public.gift_links WHERE gift_links.token = p_token AND gift_links.edition = p_edition;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'unknown'::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::timestamptz, NULL::text;
+    RETURN;
+  END IF;
+
+  -- Comme v2 (017) : la langue de l'article, pour traduire aussi les écrans « retiré » et « expiré ».
+  SELECT a.language INTO v_lang FROM public.articles a WHERE a.edition = v_link.edition AND a.arc_id = v_link.arc_id;
+
+  -- Retiré d'abord : une coupure manuelle prime sur une date encore valide.
+  IF v_link.withdrawn_at IS NOT NULL THEN
+    RETURN QUERY SELECT 'withdrawn'::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::timestamptz, v_lang;
+    RETURN;
+  END IF;
+
+  IF v_link.expires_at <= now() THEN
+    RETURN QUERY SELECT 'expired'::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::timestamptz, v_lang;
+    RETURN;
+  END IF;
+
+  -- ASSAINISSEMENT. Une query string bricolée ne doit jamais faire tomber la page : ce qui ne convient
+  -- pas devient NULL, et l'article s'affiche quand même.
+  -- Retour arrière de 019 : v3 garde son contrat mais redevient stricte, comme 015 (32 hexadécimaux).
+  v_send  := CASE WHEN p_send_id ~ '^[0-9a-f]{32}$' THEN p_send_id ELSE NULL END;
+  v_group := CASE WHEN p_campaign_group ~ '^[a-z0-9_]{1,40}$' THEN p_campaign_group ELSE NULL END;
+
+  -- LA JOURNALISATION NE CHANGE PAS. C'est elle qui porte l'attribution juste : un segment PAR LECTURE,
+  -- celui que ce visiteur-là portait dans son URL.
+  INSERT INTO public.gift_link_opens (token, utm_source, utm_campaign, referrer, send_id, campaign_group)
+  VALUES (p_token, p_utm_source, p_utm_campaign, p_referrer, v_send, v_group);
+  UPDATE public.gift_links
+     SET opens = gift_links.opens + 1, last_opened_at = now()
+   WHERE gift_links.token = p_token AND gift_links.edition = p_edition;
+
+  RETURN QUERY
+  SELECT CASE WHEN a.body IS NULL OR btrim(a.body) = '' THEN 'preview' ELSE 'ok' END,
+         a.canonical_url, a.title, a.standfirst, a.image_url,
+         CASE WHEN a.body IS NULL OR btrim(a.body) = '' THEN NULL ELSE a.body END,
+         a.section, a.author, a.published_at, a.language
+  FROM public.articles a WHERE a.edition = v_link.edition AND a.arc_id = v_link.arc_id;
+END $v3$
+;
+$ddl$;
+  END IF;
+END $v3strict$;
 
 CREATE OR REPLACE FUNCTION public.get_gift_article_for_edition(p_edition text, p_token text, p_utm_source text DEFAULT NULL::text, p_utm_campaign text DEFAULT NULL::text, p_referrer text DEFAULT NULL::text, p_send_id text DEFAULT NULL::text, p_campaign_group text DEFAULT NULL::text)
  RETURNS TABLE(status text, canonical_url text, title text, standfirst text, image_url text, body text, section text, author text, published_at timestamp with time zone)
