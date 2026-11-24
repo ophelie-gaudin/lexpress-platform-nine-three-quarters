@@ -2,10 +2,12 @@
 // `api_clients.manage_offers`. Revue adverse du 24/11, constat 3 : le retour arrière de 018 supprime la
 // table et la colonne ; sans copie, les offres et les droits accordés sont perdus.
 //
-// Trois sous-commandes, qui n'écrivent que sur la sortie standard (aucun réseau, aucun secret) :
+// Quatre sous-commandes, qui n'écrivent que sur la sortie standard (aucun réseau, aucun secret) :
 //   node gift-links/supabase/sauvegarde/offres.mjs sql-sauvegarde               > sauvegarde.sql
+//   node gift-links/supabase/sauvegarde/offres.mjs sql-verification <fichier>   > verification.sql
 //   node gift-links/supabase/sauvegarde/offres.mjs sql-retour-arriere <fichier> > retour-arriere.sql
 //   node gift-links/supabase/sauvegarde/offres.mjs sql-restauration <fichier>   > restauration.sql
+// `verification.sql` n'écrit RIEN (transaction annulée) : sauvegarde intacte et encore égale à la base.
 // `retour-arriere.sql` est le retour arrière de 018 GARDÉ par la sauvegarde : il verrouille les tables, vérifie
 // dans la même transaction que offres et droits sont encore exactement ceux de la sauvegarde, puis seulement
 // supprime. Une offre créée, terminée ou modifiée après la sauvegarde l'arrête : rien n'est perdu en silence.
@@ -91,6 +93,23 @@ const verifierBase = (message) => `  IF ${OFFRES} IS DISTINCT FROM doc->'offres'
     RAISE EXCEPTION '%: droits manage_offers différents de la sauvegarde (${message})', etape;
   END IF;`;
 
+/** Vérification sans écriture : la sauvegarde est intacte et égale à la base (sinon erreur). Annulée par ROLLBACK. */
+export function sqlVerification(doc) {
+  return `-- Vérification de la sauvegarde du ${String(doc.pris_le).replace(/[^0-9TZ:.-]/g, '')} contre la base. N'écrit rien : ROLLBACK.
+-- Généré par offres.mjs. Une erreur = sauvegarde altérée ou base modifiée depuis : reprendre la sauvegarde.
+BEGIN;
+DO $verification$
+DECLARE
+  doc jsonb := convert_from(decode('${enBase64(doc)}', 'base64'), 'UTF8')::jsonb;
+  etape text := 'vérification';
+BEGIN
+${verifierDocument}
+${verifierBase('modifiés après la sauvegarde : la reprendre')}
+END $verification$;
+ROLLBACK;
+`;
+}
+
 /** Retour arrière de 018 gardé par la sauvegarde : refuse si la base a changé depuis. */
 export function sqlRetourArriere(doc, rollback = readFileSync(new URL('../rollback/018-offres-abonnement.sql', import.meta.url), 'utf8')) {
   const corps = rollback.split('\n').filter((l) => !/^\s*(--|BEGIN;|COMMIT;|SET LOCAL lock_timeout)/.test(l) && l.trim() !== '').join('\n');
@@ -119,8 +138,9 @@ export function sqlRestauration(doc) {
   // d'un nom ne peut sortir de la chaîne SQL.
   return `-- Restauration des offres (018) et des droits manage_offers depuis la sauvegarde du ${String(doc.pris_le).replace(/[^0-9TZ:.-]/g, '')}.
 -- ${doc.offres.length} offre(s), ${doc.droits.length} jeton(s) avec le droit. Généré par offres.mjs. Rejouable.
--- Prérequis : 018 ré-appliquée. Tout écart arrête la transaction : rien n'est écrit.
--- Sur la base encore intacte, elle ne change rien et prouve que la sauvegarde est restaurable (essai à blanc).
+-- Prérequis : 018 ré-appliquée. N'écrit que dans une table VIDE où aucun jeton n'a le droit (l'état juste
+-- après ré-application) ; sinon elle compare seulement, et refuse le moindre écart sans rien écrire : elle ne
+-- peut pas remettre une offre ni un droit retirés depuis la sauvegarde. Tout écart annule la transaction.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 DO $restauration$
@@ -146,6 +166,12 @@ ${verifierDocument}
    WHERE i IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.api_clients c WHERE c.id = i::uuid);
   IF v IS NOT NULL THEN RAISE EXCEPTION 'restauration : jetons absents de api_clients : %', v; END IF;
 
+  -- Base déjà peuplée (pas encore supprimée, ou déjà restaurée) : comparaison seule, aucune écriture.
+  IF EXISTS (SELECT 1 FROM public.subscription_offers) OR EXISTS (SELECT 1 FROM public.api_clients WHERE manage_offers) THEN
+${verifierBase('la restauration n’écrit que dans une table vide sans droit accordé')}
+    RETURN;
+  END IF;
+
   INSERT INTO public.subscription_offers (id, name, sites, starts_at, ends_at, url, label, created_by, created_at, ended_by, ended_at, request_id)
   SELECT x.id, x.name, x.sites, x.starts_at::timestamptz, x.ends_at::timestamptz, x.url, x.label,
          x.created_by, x.created_at::timestamptz, x.ended_by, x.ended_at::timestamptz, x.request_id
@@ -166,9 +192,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const [commande, fichier] = process.argv.slice(2);
   if (commande === 'sql-sauvegarde') process.stdout.write(sqlSauvegarde());
   else if (commande === 'sql-restauration' && fichier) process.stdout.write(sqlRestauration(lireSauvegarde(readFileSync(fichier, 'utf8'))));
+  else if (commande === 'sql-verification' && fichier) process.stdout.write(sqlVerification(lireSauvegarde(readFileSync(fichier, 'utf8'))));
   else if (commande === 'sql-retour-arriere' && fichier) process.stdout.write(sqlRetourArriere(lireSauvegarde(readFileSync(fichier, 'utf8'))));
   else {
-    process.stderr.write('usage : offres.mjs sql-sauvegarde | sql-retour-arriere <fichier de sauvegarde> | sql-restauration <fichier de sauvegarde>\n');
+    process.stderr.write('usage : offres.mjs sql-sauvegarde | sql-verification <fichier de sauvegarde> | sql-retour-arriere <fichier de sauvegarde> | sql-restauration <fichier de sauvegarde>\n');
     process.exit(2);
   }
 }

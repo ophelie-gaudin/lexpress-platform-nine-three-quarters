@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
-import { sqlSauvegarde, sqlRestauration, sqlRetourArriere, lireSauvegarde } from './gift-links/supabase/sauvegarde/offres.mjs';
+import { sqlSauvegarde, sqlRestauration, sqlRetourArriere, sqlVerification, lireSauvegarde } from './gift-links/supabase/sauvegarde/offres.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 const db = new PGlite();
@@ -100,6 +100,37 @@ try {
     'la ligne de commande rend la restauration depuis le fichier de l’API');
   const sqlR = restauration.stdout;
   check(!sqlR.includes("Flash l'hiver") && !sqlR.includes('$restauration$ 🎁'), 'les valeurs voyagent en base64, jamais en clair dans le SQL');
+
+  // Vérification : n'écrit rien, passe sur la base intacte.
+  {
+    const avantVerif = JSON.stringify(sansHorloge(await etat()));
+    await db.exec(sqlVerification(sauvegarde));
+    check(JSON.stringify(sansHorloge(await etat())) === avantVerif, 'vérification : passe sur la base intacte, sans rien écrire');
+    check(/ROLLBACK;\s*$/.test(sqlVerification(sauvegarde)) && cli('sql-verification', fichier).stdout === sqlVerification(sauvegarde), 'vérification : se termine par ROLLBACK, même SQL par la ligne de commande');
+  }
+  // Seconde revue GPT : un droit retiré ou une offre supprimée APRÈS la sauvegarde ne doivent jamais être
+  // remis par une « restauration à blanc » ; vérification et retour arrière gardé doivent refuser.
+  for (const [quoi, changer, annuler] of [
+    ['droit manage_offers retiré', "UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-ancien'", "UPDATE public.api_clients SET manage_offers = true WHERE name = 'marketing-ancien'"],
+    ['offre supprimée', null, null],
+  ]) {
+    let supprimee = null;
+    if (changer) await db.exec(changer);
+    else supprimee = (await q('DELETE FROM public.subscription_offers WHERE id = (SELECT min(id::text)::uuid FROM public.subscription_offers) RETURNING to_jsonb(subscription_offers) AS o'))[0].o;
+    const apresChangement = JSON.stringify(sansHorloge(await etat()));
+    const eR = await erreur(sqlRestauration(sauvegarde)); await db.exec('ROLLBACK');
+    check(eR && /différents|différentes/.test(eR), `${quoi} : la restauration sur la base intacte refuse (${eR})`);
+    check(JSON.stringify(sansHorloge(await etat())) === apresChangement, `${quoi} : rien n’est remis`);
+    const eV = await erreur(sqlVerification(sauvegarde)); await db.exec('ROLLBACK');
+    check(eV && /modifiés après la sauvegarde/.test(eV), `${quoi} : la vérification refuse`);
+    const eG = await erreur(sqlRetourArriere(sauvegarde)); await db.exec('ROLLBACK');
+    check(eG && /modifiés après la sauvegarde/.test(eG), `${quoi} : le retour arrière gardé refuse, rien supprimé`);
+    if (annuler) await db.exec(annuler);
+    else {
+      await q(`INSERT INTO public.subscription_offers SELECT * FROM jsonb_populate_record(NULL::public.subscription_offers, $1::jsonb)`, [JSON.stringify(supprimee)]);
+    }
+  }
+  check(JSON.stringify(sansHorloge(await etat())) === JSON.stringify(sansHorloge(avant)), 'base remise à l’état sauvegardé pour la suite');
 
   // Restaurer avant le retour arrière : rejouable, rien ne change.
   await db.exec(sqlR);
