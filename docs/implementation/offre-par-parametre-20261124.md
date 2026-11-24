@@ -65,8 +65,9 @@ Un jeton révoqué ne peut rien faire, droit ou pas (`verify_api_client` le refu
   à venir (en 018, elle deviendrait visible sur tous les articles de ses sites).
 - `gift-links/supabase/rollback/018-offres-abonnement.sql` : refuse désormais de s’exécuter tant que
   020 est en place (ses fonctions survivraient à la table).
-- `gift-links/supabase/sauvegarde/codes-020.mjs` : sauvegarde, vérification (sans écriture) et
-  restauration des codes, pour qu’un lien déjà envoyé ne désigne jamais une autre offre après un
+- `gift-links/supabase/sauvegarde/codes-020.mjs` : sauvegarde, vérification (sans écriture), retour
+  arrière gardé par la sauvegarde (égalité complète sous verrou, revue GPT du 24/11) et restauration des
+  codes (codes provisoires tirés au hasard), pour qu’un lien déjà envoyé ne désigne jamais une autre offre après un
   retour arrière puis une ré-application.
 - Fonction `subscription-offers` v2 : champ `code` (409 s’il est pris), `link_parameter` dans les
   réponses, `DELETE ?code=` ou `?id=` (un seul), liste avec `code`.
@@ -100,7 +101,7 @@ page n’a été publiée.
 
 Aussi vérifié sur TEST : empreintes de la lecture d’article (v1, v2, `_for_edition`, v3), de
 `create_gift_links*` et des fonctions des jetons **identiques** avant et après 020 ; fonction **v1**
-après 020 : création 201 (code tiré), liste 200, fin par id 200 ; fonction **v2** déployée (version 2) :
+après 020 : création 201 (code tiré), liste 200, fin par id 200 ; fonction **v2** déployée (version 2, puis version 3 après la revue : commentaire seulement) :
 409 sur code pris, 400 sur code mal formé et sur `?id=…&code=…`, 404 sur code inconnu ; ancienne RPC
 `get_subscription_offer({p_site})` → 404 ; table → 401 pour la clé publique ; retour arrière brut → refusé
 (7 offres vivantes) ; cycle complet « fin des offres → retour arrière → ré-application → restauration des
@@ -109,6 +110,12 @@ des offres **égaux à ceux de la PROD actuelle** (`get_subscription_offer(text)
 `current_subscription_offer_id` `a4c708d2…`, `create_subscription_offer` (8) `f1568d03…`,
 `list_subscription_offers` `2c738da5…`), défaut `manage_offers` faux, colonne `code` absente ; après
 restauration, 14 codes sur 14 remis ; rien n’a persisté (relevé suivant identique).
+
+Après la revue GPT du 24/11 (NO-GO, deux constats majeurs sur la sauvegarde des codes), deux essais de
+plus sur TEST, chacun dans une transaction annulée : (A) une offre créée puis terminée après la
+sauvegarde → le retour arrière gardé refuse (« offres et codes différents de la sauvegarde ») ; (B) le
+cycle complet avec le retour arrière gardé → mêmes empreintes de 018 que la PROD, 14 codes restaurés ;
+vérification d’égalité complète passée ensuite sur la base, inchangée.
 
 Nettoyage TEST (facultatif) : les offres de recette se terminent seules le 26/11 et le 27/11 (à venir).
 Pour les effacer : `DELETE FROM public.subscription_offers WHERE request_id LIKE 'recette-%';`.
@@ -180,7 +187,7 @@ Après (si un point échoue : § 7, retour arrière de 020) :
 
 Avant :
 - [ ] Étape 1 faite et vérifiée.
-- [ ] `npm run build` puis `git status` propre ; `shasum -a 256 gift-links/functions/subscription-offers/index.bundle.ts` = `c80e3e1b05082339ce7f1bd811e90788c86b89e38918b54af16e4b560b718452` (bundle déployé sur TEST).
+- [ ] `npm run build` puis `git status` propre ; `shasum -a 256 gift-links/functions/subscription-offers/index.bundle.ts` = `08eb8fda6343e7b1ef89d9572b873dfb7102bf9e58587b6c25172e9018d7f729` (bundle déployé sur TEST).
 - [ ] `GET /v1/projects/ovifzentveeehhtlnugk/functions` : `subscription-offers` version 1, `ezbr_sha256` commençant par `cc6977b4bc48`.
 
 Après accord, même POST multipart que pour `create-gift-links` (runbook du 23/11 § 2), slug
@@ -188,7 +195,7 @@ Après accord, même POST multipart que pour `create-gift-links` (runbook du 23/
 `gift-links/functions/subscription-offers/index.bundle.ts`.
 
 Après :
-- [ ] `subscription-offers` version 2, `ezbr_sha256` commençant par `44575b4fd7a3` (valeur TEST du même bundle) ; `create-gift-links` inchangée (version et `ezbr_sha256` d’avant).
+- [ ] `subscription-offers` version 2, `ezbr_sha256` commençant par `ff91ab444d99` (valeur TEST du même bundle, version 3 sur TEST) ; `create-gift-links` inchangée (version et `ezbr_sha256` d’avant).
 - [ ] Sans en-tête → 401 (aucune écriture). Avec un jeton : voir l’écriture annoncée au runbook du 23/11 § 2 (`calls`, `last_used_at`).
 
 Retour arrière : redéployer `gift-links/fixtures/subscription-offers-v1.bundle.ts.txt` (la v1, compatible
@@ -236,7 +243,9 @@ liens d’un envoi de test interne, ouvrir un de ces liens : bouton de l’offre
   n’appelle aucune RPC d’offre.
 - **Couper une offre** : `DELETE ?code=<code>` (README), ou en SQL
   `UPDATE public.subscription_offers SET ended_at = now() WHERE code = '<code>' AND ended_at IS NULL;`
-  Les pages ouvertes la quittent à leur relecture suivante (5 minutes au plus).
+  Les pages ouvertes la quittent à leur relecture réussie suivante : normalement sous 5 minutes dans un
+  onglet actif ; pendant une panne de lecture, la dernière réponse valide reste, au plus jusqu’à la date
+  de fin de l’offre.
 - **Interrupteur réversible (toutes les offres d’un coup)**, sans rien supprimer :
 
   ```sql
@@ -262,10 +271,19 @@ liens d’un envoi de test interne, ouvrir un de ces liens : bouton de l’offre
     node gift-links/supabase/sauvegarde/codes-020.mjs sql-restauration "$F" > /tmp/p934-codes-restau.sql
     ```
 
-    Passer `/tmp/p934-codes-verif.sql` : n’écrit rien (ROLLBACK), échoue si la sauvegarde est altérée
-    ou si un code a changé depuis.
+    Passer `/tmp/p934-codes-verif.sql` : n’écrit rien (ROLLBACK), échoue si la sauvegarde est altérée,
+    si un code a changé ou si une offre a été créée depuis (égalité complète).
 
-  Puis appliquer `gift-links/supabase/rollback/020-offre-par-parametre.sql` par le même endpoint.
+  Puis générer et appliquer le retour arrière **gardé par la sauvegarde** (et non le fichier brut) :
+
+  ```sh
+  node gift-links/supabase/sauvegarde/codes-020.mjs sql-retour-arriere "$F" > /tmp/p934-retour-020.sql
+  ```
+
+  Sous verrou, il vérifie que la table contient **exactement** les couples (offre, code) de la
+  sauvegarde — une offre créée depuis, même terminée, l’arrête sans rien supprimer : reprendre la
+  sauvegarde — puis exécute le corps de `rollback/020-offre-par-parametre.sql` (qui refuse aussi tant
+  qu’une offre vit). Les définitions de 018 y sont reprises sans altération (test).
 
   Après :
   - [ ] Relevé des empreintes : les quatre valeurs de 018 de l’étape 1 « Avant » retrouvées
