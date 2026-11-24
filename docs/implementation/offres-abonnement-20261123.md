@@ -3,6 +3,14 @@
 Préparation locale et TEST uniquement. Aucune écriture PROD, aucune fonction déployée en PROD,
 aucune publication Lovable. Chaque geste PROD ci-dessous attend l’accord écrit d’Ophélie.
 
+> **Mise à jour du 24/11 (migration 020) : une offre ne s’affiche plus pour tous les lecteurs d’un
+> site, mais seulement sur les liens qui la désignent (`?offre=<code>`), et un jeton créé a le droit de
+> gérer les offres.** La règle de chevauchement, `displayed_now` et `get_subscription_offer(p_site)`
+> décrits ci-dessous sont remplacés. État en PROD le 24/11 : 018, fonction v1 et 019 posées ; étape 3
+> (jeton marketing) non faite. **La suite des gestes PROD et leur retour arrière sont dans
+> [offre-par-parametre-20261124.md](offre-par-parametre-20261124.md)** ; ce document reste la référence
+> pour 018, 019 et la sauvegarde de 018.
+
 **Revue adverse du 24/11 (GPT 6.1 Sol) : NO-GO, cinq constats, corrigés le 24/11** — détail au
 § « Corrections après la revue du 24/11 » ; les gestes PROD (§ « Gestes proposés ») sont réécrits
 en conséquence, avec une check-list avant/après par étape.

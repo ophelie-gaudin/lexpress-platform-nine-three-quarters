@@ -1,0 +1,603 @@
+{
+ "titre": "Recette TEST de la migration 020 et de la fonction subscription-offers v2 (offre désignée par le lien)",
+ "date": "2026-11-24",
+ "niveau": "TEST",
+ "base": "gsvvcrhagatwjwyyjkli (branche Supabase persistante test-europe)",
+ "prod": "aucune écriture ; lectures seules : liste des jetons et empreintes, ovifzentveeehhtlnugk",
+ "page": "code du lecteur de la branche recette/offres-test (commit 6496128, report de 652077f de !1) exécuté par bun 1.4.4 contre la vraie RPC TEST ; aucune publication",
+ "empreintes": {
+  "prod_egale_test_avant_020": true,
+  "fonctions_protegees_inchangees_par_020": {
+   "count_client_links(uuid,integer)": {
+    "avant": "6e0e12d3386a1717fd066353814e6882",
+    "apres": "6e0e12d3386a1717fd066353814e6882",
+    "egal": true
+   },
+   "create_api_client(text,text,text)": {
+    "avant": "aa4bc4ba3fbd76f73887b2bae9d4093a",
+    "apres": "aa4bc4ba3fbd76f73887b2bae9d4093a",
+    "egal": true
+   },
+   "create_gift_links(text[],timestamp with time zone,uuid)": {
+    "avant": "f497243d6b332c8770f27e9c61b0f42f",
+    "apres": "f497243d6b332c8770f27e9c61b0f42f",
+    "egal": true
+   },
+   "create_gift_links_for_edition(text,text[],timestamp with time zone,uuid)": {
+    "avant": "cc3f4617c2d79ec40e04f781784d9a00",
+    "apres": "cc3f4617c2d79ec40e04f781784d9a00",
+    "egal": true
+   },
+   "get_gift_article(text,text,text,text,text,text)": {
+    "avant": "abd4415db6201b4bb88f7f11091fe76d",
+    "apres": "abd4415db6201b4bb88f7f11091fe76d",
+    "egal": true
+   },
+   "get_gift_article_for_edition(text,text,text,text,text,text,text)": {
+    "avant": "254b463cfdba9db7bdc326f40d38d788",
+    "apres": "254b463cfdba9db7bdc326f40d38d788",
+    "egal": true
+   },
+   "get_gift_article_for_edition_v2(text,text,text,text,text,text,text)": {
+    "avant": "dc85109961ed63757792da869fbace7d",
+    "apres": "dc85109961ed63757792da869fbace7d",
+    "egal": true
+   },
+   "get_gift_article_for_edition_v3(text,text,text,text,text,text,text)": {
+    "avant": "2b384d83e5d38190b3d91b1eaf4d25dc",
+    "apres": "2b384d83e5d38190b3d91b1eaf4d25dc",
+    "egal": true
+   },
+   "revoke_api_client(text)": {
+    "avant": "bcdfb33ef237966ebb6590405f78def9",
+    "apres": "bcdfb33ef237966ebb6590405f78def9",
+    "egal": true
+   },
+   "verify_api_client(text)": {
+    "avant": "6ed8b1fdb28f70f02ebba4df9451e312",
+    "apres": "6ed8b1fdb28f70f02ebba4df9451e312",
+    "egal": true
+   }
+  },
+  "fonctions_offres_apres_020": {
+   "col:manage_offers": "true",
+   "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text,text)": "c7a805ea422efbdb026e30b4f39cefa6",
+   "end_subscription_offer_by_code(uuid,text)": "29afa44bc0c3d152fa64ea7927abb976",
+   "get_subscription_offer(text,text)": "b2a632748013bc1396796f8cb6b64ca6",
+   "list_subscription_offers(uuid)": "6dc6c993b5d3827607efeb2f186ab6d0",
+   "offer_code_valid(text)": "9738a02406cb7d9316630b455434de75"
+  },
+  "retirees_par_020": [
+   "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text)",
+   "current_subscription_offer_id(text)",
+   "get_subscription_offer(text)"
+  ]
+ },
+ "fonction": {
+  "v1_apres_020": {
+   "creation": "HTTP 201",
+   "fin_par_id": "HTTP 200",
+   "liste": "HTTP 200, code présent (8b847ade85cf9183)"
+  },
+  "v2_deploiement": {
+   "version": 2,
+   "ezbr_sha256": "44575b4fd7a3310fec0551227111ad633b389c0bc94bec8b766b2a396e582305",
+   "bundle_sha256": "c80e3e1b05082339ce7f1bd811e90788c86b89e38918b54af16e4b560b718452"
+  },
+  "v2_gestes": [
+   {
+    "geste": "valide",
+    "reponse": {
+     "offer": {
+      "id": "70d95f36-f977-48d8-b66d-b35c77be67e4",
+      "code": "recette-020-valide",
+      "name": "recette-020-valide",
+      "sites": [
+       "www.lexpress.fr"
+      ],
+      "starts_at": "2026-11-24T10:57:04.169029+00:00",
+      "ends_at": "2026-11-26T10:57:02+00:00",
+      "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020",
+      "label": "Recette 020 valide",
+      "ended_at": null,
+      "status": "active",
+      "link_parameter": "offre=recette-020-valide"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "deuxieme",
+    "reponse": {
+     "offer": {
+      "id": "4fcc9c83-d40d-4ac5-a1b8-188948fdfc72",
+      "code": "recette-020-deuxieme",
+      "name": "recette-020-deuxieme",
+      "sites": [
+       "www.lexpress.fr"
+      ],
+      "starts_at": "2026-11-24T10:57:04.522364+00:00",
+      "ends_at": "2026-11-26T10:57:02+00:00",
+      "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020B",
+      "label": "Recette 020 deuxième",
+      "ended_at": null,
+      "status": "active",
+      "link_parameter": "offre=recette-020-deuxieme"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "a-venir",
+    "reponse": {
+     "offer": {
+      "id": "71203ee4-0898-4c21-b9cc-794cc34ae8ae",
+      "code": "recette-020-a-venir",
+      "name": "recette-020-a-venir",
+      "sites": [
+       "www.lexpress.fr"
+      ],
+      "starts_at": "2026-11-25T10:57:02+00:00",
+      "ends_at": "2026-11-27T10:57:02+00:00",
+      "url": null,
+      "label": "Recette 020 à venir",
+      "ended_at": null,
+      "status": "scheduled",
+      "link_parameter": "offre=recette-020-a-venir"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "finie-tot",
+    "reponse": {
+     "offer": {
+      "id": "08e10f0f-c302-4d03-a27a-362017170b0c",
+      "code": "recette-020-finie-tot",
+      "name": "recette-020-finie-tot",
+      "sites": [
+       "www.lexpress.fr"
+      ],
+      "starts_at": "2026-11-24T10:57:05.393258+00:00",
+      "ends_at": "2026-11-26T10:57:02+00:00",
+      "url": null,
+      "label": "Recette 020 finie tôt",
+      "ended_at": null,
+      "status": "active",
+      "link_parameter": "offre=recette-020-finie-tot"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "fin par code",
+    "reponse": {
+     "code": "recette-020-finie-tot",
+     "result": "ended",
+     "client": "marketing-offres-test"
+    },
+    "http": 200
+   },
+   {
+    "geste": "pl",
+    "reponse": {
+     "offer": {
+      "id": "345001b4-3342-4c8d-ba29-28ed56f10e23",
+      "code": "recette-020-pl",
+      "name": "recette-020-pl",
+      "sites": [
+       "pl.lexpress.eu"
+      ],
+      "starts_at": "2026-11-24T10:57:06.127311+00:00",
+      "ends_at": "2026-11-26T10:57:02+00:00",
+      "url": "https://pl.lexpress.eu/subskrypcja/?promo=r020",
+      "label": "Recette 020 PL",
+      "ended_at": null,
+      "status": "active",
+      "link_parameter": "offre=recette-020-pl"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "sans code",
+    "reponse": {
+     "offer": {
+      "id": "f2ddc481-9000-439b-8514-947040a221c5",
+      "code": "eaf5d17b2a0002ea",
+      "name": "recette-020-sans-code",
+      "sites": [
+       "www.lexpress.eu"
+      ],
+      "starts_at": "2026-11-24T10:57:06.464044+00:00",
+      "ends_at": "2026-11-26T10:57:02+00:00",
+      "url": null,
+      "label": "Recette 020 code tiré",
+      "ended_at": null,
+      "status": "active",
+      "link_parameter": "offre=eaf5d17b2a0002ea"
+     },
+     "client": "marketing-offres-test"
+    },
+    "http": 201
+   },
+   {
+    "geste": "doublon",
+    "reponse": {
+     "error": "code déjà utilisé par une autre offre (un code n’est jamais réattribué) : en choisir un autre"
+    },
+    "http": 409
+   },
+   {
+    "geste": "code invalide",
+    "reponse": {
+     "error": "code : 3 à 40 caractères parmi a-z (minuscules sans accent), 0-9 et -, par exemple black-friday-2026 ; absent, l’API en tire un"
+    },
+    "http": 400
+   },
+   {
+    "geste": "DELETE id+code",
+    "reponse": {
+     "error": "désigner l’offre par ?id=<uuid> ou par ?code=<code>, un seul des deux"
+    },
+    "http": 400
+   },
+   {
+    "geste": "DELETE code inconnu",
+    "reponse": {
+     "error": "offre inconnue",
+     "code": "recette-020-inconnu",
+     "client": "marketing-offres-test"
+    },
+    "http": 404
+   }
+  ],
+  "offre_expiree": "insérée en SQL sur TEST (l'API refuse une fin passée) : code recette-020-expiree, fin il y a 1 minute"
+ },
+ "cas_page": [
+  {
+   "cas": "1",
+   "quoi": "sans paramètre → défaut, aucune lecture",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": null,
+   "lectures_offre": [],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "1b",
+   "quoi": "paramètre mal formé → défaut, aucune lecture",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=Recette%20020&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": null,
+   "lectures_offre": [],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "2",
+   "quoi": "offre valide → offre",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-valide&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-valide",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-valide\"}"
+   ],
+   "bouton": {
+    "label": "Recette 020 valide",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020&at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Recette 020 valide",
+   "ok": true
+  },
+  {
+   "cas": "3",
+   "quoi": "offre expirée → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-expiree&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-expiree",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-expiree\"}"
+   ],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "4",
+   "quoi": "offre pas encore commencée → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-a-venir&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-a-venir",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-a-venir\"}"
+   ],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "5",
+   "quoi": "offre terminée en avance → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-finie-tot&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-finie-tot",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-finie-tot\"}"
+   ],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "6",
+   "quoi": "code inconnu → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-inconnu&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-inconnu",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-inconnu\"}"
+   ],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "7",
+   "quoi": "offre d'un autre site (PL) sur un article FR → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-pl&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-pl",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-pl\"}"
+   ],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "7b",
+   "quoi": "offre FR sur un article PL → défaut (polonais)",
+   "url_article": "https://articles.lexpress.eu/a/<jeton>?offre=recette-020-valide&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "pl.lexpress.eu",
+   "code": "recette-020-valide",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"pl.lexpress.eu\",\"p_code\":\"recette-020-valide\"}"
+   ],
+   "bouton": {
+    "label": "Subskrypcja",
+    "href": "https://pl.lexpress.eu/subskrypcja/?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Subskrypcja",
+   "ok": true
+  },
+  {
+   "cas": "7c",
+   "quoi": "offre PL sur un article PL → offre",
+   "url_article": "https://articles.lexpress.eu/a/<jeton>?offre=recette-020-pl&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "pl.lexpress.eu",
+   "code": "recette-020-pl",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"pl.lexpress.eu\",\"p_code\":\"recette-020-pl\"}"
+   ],
+   "bouton": {
+    "label": "Recette 020 PL",
+    "href": "https://pl.lexpress.eu/subskrypcja/?promo=r020&at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Recette 020 PL",
+   "ok": true
+  },
+  {
+   "cas": "8a",
+   "quoi": "deux offres coexistent : lien de la première",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-valide&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-valide",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-valide\"}"
+   ],
+   "bouton": {
+    "label": "Recette 020 valide",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020&at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Recette 020 valide",
+   "ok": true
+  },
+  {
+   "cas": "8b",
+   "quoi": "deux offres coexistent : lien de la seconde",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?offre=recette-020-deuxieme&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": "recette-020-deuxieme",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.fr\",\"p_code\":\"recette-020-deuxieme\"}"
+   ],
+   "bouton": {
+    "label": "Recette 020 deuxième",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020B&at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Recette 020 deuxième",
+   "ok": true
+  },
+  {
+   "cas": "8c",
+   "quoi": "sans paramètre, alors que deux offres sont en cours → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": null,
+   "lectures_offre": [],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "8d",
+   "quoi": "code tiré par l'API (www.lexpress.eu, anglais)",
+   "url_article": "https://articles.lexpress.eu/a/<jeton>?offre=eaf5d17b2a0002ea&at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.eu",
+   "code": "eaf5d17b2a0002ea",
+   "lectures_offre": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer {\"p_site\":\"www.lexpress.eu\",\"p_code\":\"eaf5d17b2a0002ea\"}"
+   ],
+   "bouton": {
+    "label": "Recette 020 code tiré",
+    "href": "https://www.lexpress.eu/subscribe/?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "Recette 020 code tiré",
+   "ok": true
+  },
+  {
+   "cas": "8e",
+   "quoi": "ancienne offre de recette 018, en cours, sans son code → défaut",
+   "url_article": "https://articles.lexpress.fr/a/<jeton>?at_medium=Email&at_campaign=recette020&s=123456789012&utm_source=pirate&foo=1",
+   "site": "www.lexpress.fr",
+   "code": null,
+   "lectures_offre": [],
+   "bouton": {
+    "label": "S'abonner à L'Express",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012"
+   },
+   "attendu": "S'abonner à L'Express",
+   "ok": true
+  },
+  {
+   "cas": "10",
+   "offre": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020&at_medium=Email&at_campaign=recette020&s=123456789012",
+   "defaut": "https://abonnements-digitaux.lexpress.fr/offres?at_medium=Email&at_campaign=recette020&s=123456789012",
+   "offre_pl": "https://pl.lexpress.eu/subskrypcja/?promo=r020&at_medium=Email&at_campaign=recette020&s=123456789012",
+   "ok": true
+  },
+  {
+   "corps": {
+    "p_site": "www.lexpress.fr",
+    "p_code": null
+   },
+   "http": 200,
+   "reponse": "[]"
+  },
+  {
+   "corps": {
+    "p_site": "www.lexpress.fr"
+   },
+   "http": 404,
+   "reponse": "{\"code\":\"PGRST202\",\"details\":\"Searched for the function public.get_subscription_offer with parameter p_site or with a single unnamed json/jsonb parameter, but n"
+  },
+  {
+   "corps": {
+    "p_site": "www.lexpress.fr",
+    "p_code": "recette-020-valide"
+   },
+   "http": 200,
+   "reponse": "[{\"label\":\"Recette 020 valide\",\"url\":\"https://abonnements-digitaux.lexpress.fr/offres?refTarif=R020\",\"ends_at\":\"2026-11-26T10:57:02+00:00\"}]"
+  },
+  {
+   "table_anon_http": 401,
+   "corps": "{\"code\":\"42501\",\"details\":null,\"hint\":\"Grant the required privileges to the current role with: GRANT SELECT ON public.su"
+  },
+  {
+   "cas": "11",
+   "lectures_offre_envoyees": 30,
+   "toutes_vers": [
+    "gsvvcrhagatwjwyyjkli/rest/v1/rpc/get_subscription_offer"
+   ]
+  },
+  {
+   "resume": "TOUS OK"
+  }
+ ],
+ "cas_9_jeton_neuf": {
+  "jeton": "recette-020-defaut-105716",
+  "manage_offers_a_la_creation": true,
+  "defaut_colonne": "true",
+  "revoque": true,
+  "etat": [
+   {
+    "name": "recette-020-defaut-105716",
+    "manage_offers": true,
+    "active": false
+   }
+  ]
+ },
+ "cas_11_lectures_article": {
+  "gift_link_opens_avant": {
+   "n": 65,
+   "max_id": 77
+  },
+  "gift_link_opens_apres": {
+   "n": 65,
+   "max_id": 77
+  },
+  "lectures_offre_envoyees": "15 (cas) + 30 (boucle) + 3 RPC brutes",
+  "conclusion": "aucune lecture d'article comptée"
+ },
+ "retour_arriere": {
+  "brut_avec_offres_vivantes": "{\"message\":\"Failed to run sql query: ERROR:  P0001: retour arrière de 020 refusé : 7 offre(s) en cours ou à venir deviendraient visibles sur tous les articles de leurs sites ; les terminer d'abord\\nCONTEXT:  PL/pgSQL function inline_code_block line 6 at RAISE\\n\"}",
+  "sauvegarde_codes": {
+   "format": "p934-codes-020-v1",
+   "offres": 14,
+   "empreinte": "cc0cc1b3d9a8a09cc931be11f630cfc3",
+   "verification": "passe, n'écrit rien"
+  },
+  "cycle_dans_une_transaction_annulee": {
+   "etat_018_apres_retour_arriere": {
+    "col:code": "0 ",
+    "col:manage_offers": "false ",
+    "offer_url_family(text)": "c86a596dc975e9dff73fe5ac83f8ea9e {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "offer_site_family(text)": "37b2af1a287e159bcbe902d49061cebf {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "offer_site_language(text)": "22d0319ea3b96e72f37c4de5dd31e211 {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "offer_sites_valid(text[])": "cfa8bf5a40525f9aabdc82b2254c590e {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "assert_offer_manager(uuid)": "b6bdfd79e6a6045aaa05f50a18f2ea15 {postgres=X/postgres,service_role=X/postgres}",
+    "get_subscription_offer(text)": "66659a5e6ac52ba6278f13ff70a7acef {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "list_subscription_offers(uuid)": "2c738da530a0ba3e9591045173838ce8 {postgres=X/postgres,service_role=X/postgres}",
+    "end_subscription_offer(uuid,uuid)": "43b7135823932c8543f335c28a8a9476 {postgres=X/postgres,service_role=X/postgres}",
+    "current_subscription_offer_id(text)": "a4c708d282fc50c9252cee10a34c1631 {postgres=X/postgres,service_role=X/postgres}",
+    "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text)": "f1568d03480d69d5adc63668a141ec3f {postgres=X/postgres,service_role=X/postgres}"
+   },
+   "apres_reapplication_et_restauration": {
+    "offres": 14,
+    "codes_recette": 6,
+    "codes_engendres_16hex": 8
+   }
+  },
+  "egal_prod_018": {
+   "get_subscription_offer(text)": true,
+   "current_subscription_offer_id(text)": true,
+   "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text)": true,
+   "list_subscription_offers(uuid)": true
+  },
+  "rien_n_a_persiste": "relevé des empreintes suivant identique à l'après-020 (seul le nombre d'offres a changé : 6 → 14, offres de recette) ; vérification des codes : passe"
+ },
+ "nettoyage": "DELETE FROM public.subscription_offers WHERE request_id LIKE 'recette-%'; (facultatif, TEST)"
+}
