@@ -10,8 +10,9 @@
 //   DELETE ?id=<uuid> | ?code=<code>   fin anticipée : annule une offre à venir, termine une offre en cours
 //
 // AUTHENTIFICATION : le même jeton par service que create-gift-links, dans `x-gift-service-token`.
-// Un jeton valide ne suffit pas : le service doit avoir le droit `manage_offers`, accordé à la main.
-// L'agent WhatsApp crée des liens ; il ne doit pas pouvoir changer le bouton de toutes les pages.
+// Un jeton valide ne suffit pas : le service doit avoir le droit `manage_offers`. Depuis 020 (24/11/2026),
+// un jeton CRÉÉ l'a par défaut ; les jetons antérieurs ne l'ont que si on le leur accorde, jeton par jeton.
+// Pour un service qui ne doit pas gérer les offres, retirer le droit après sa création (README).
 //
 // La page de lecture ne passe JAMAIS par ici : elle lit l'offre en cours par la RPC publique
 // get_subscription_offer(site, code), qui ne rend que libellé, URL et date de fin.

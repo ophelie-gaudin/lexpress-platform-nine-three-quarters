@@ -80,9 +80,10 @@
    "liste": "HTTP 200, code présent (8b847ade85cf9183)"
   },
   "v2_deploiement": {
-   "version": 2,
-   "ezbr_sha256": "44575b4fd7a3310fec0551227111ad633b389c0bc94bec8b766b2a396e582305",
-   "bundle_sha256": "c80e3e1b05082339ce7f1bd811e90788c86b89e38918b54af16e4b560b718452"
+   "version_test": 3,
+   "ezbr_sha256": "ff91ab444d99c2ae457f8eded2297de02b363af58a3d12dcde72f770cd048d80",
+   "bundle_sha256": "08eb8fda6343e7b1ef89d9572b873dfb7102bf9e58587b6c25172e9018d7f729",
+   "historique": "version 2 (bundle c80e3e1b…, ezbr 44575b4f…) pour la recette ; version 3 après la revue GPT, commentaire seulement ; GET 200 et sans en-tête 401 après redéploiement"
   },
   "v2_gestes": [
    {
@@ -597,7 +598,32 @@
    "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text)": true,
    "list_subscription_offers(uuid)": true
   },
-  "rien_n_a_persiste": "relevé des empreintes suivant identique à l'après-020 (seul le nombre d'offres a changé : 6 → 14, offres de recette) ; vérification des codes : passe"
+  "rien_n_a_persiste": "relevé des empreintes suivant identique à l'après-020 (seul le nombre d'offres a changé : 6 → 14, offres de recette) ; vérification des codes : passe",
+  "apres_revue_gpt": {
+   "A_offre_creee_apres_sauvegarde": "Failed to run sql query: ERROR:  P0001: retour arrière de 020 refusé: offres et codes différents de la sauvegarde (modifiés après la sauvegarde : la reprendre)",
+   "B_cycle_garde_transaction_annulee": {
+    "etat_018_apres_retour_arriere": {
+     "col:code": "0 ",
+     "col:manage_offers": "false ",
+     "offer_url_family(text)": "c86a596dc975e9dff73fe5ac83f8ea9e {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+     "offer_site_family(text)": "37b2af1a287e159bcbe902d49061cebf {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+     "offer_site_language(text)": "22d0319ea3b96e72f37c4de5dd31e211 {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+     "offer_sites_valid(text[])": "cfa8bf5a40525f9aabdc82b2254c590e {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+     "assert_offer_manager(uuid)": "b6bdfd79e6a6045aaa05f50a18f2ea15 {postgres=X/postgres,service_role=X/postgres}",
+     "get_subscription_offer(text)": "66659a5e6ac52ba6278f13ff70a7acef {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+     "list_subscription_offers(uuid)": "2c738da530a0ba3e9591045173838ce8 {postgres=X/postgres,service_role=X/postgres}",
+     "end_subscription_offer(uuid,uuid)": "43b7135823932c8543f335c28a8a9476 {postgres=X/postgres,service_role=X/postgres}",
+     "current_subscription_offer_id(text)": "a4c708d282fc50c9252cee10a34c1631 {postgres=X/postgres,service_role=X/postgres}",
+     "create_subscription_offer(uuid,text[],timestamp with time zone,timestamp with time zone,text,text,text,text)": "f1568d03480d69d5adc63668a141ec3f {postgres=X/postgres,service_role=X/postgres}"
+    },
+    "apres_reapplication_et_restauration": {
+     "offres": 14,
+     "codes_recette": 6,
+     "codes_engendres_16hex": 8
+    }
+   },
+   "base_apres_essais": "vérification d'égalité complète des codes : passe (rien n'a persisté)"
+  }
  },
  "nettoyage": "DELETE FROM public.subscription_offers WHERE request_id LIKE 'recette-%'; (facultatif, TEST)"
 }

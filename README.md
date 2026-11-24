@@ -447,8 +447,11 @@ créer une nouvelle.
 | 503 | base indisponible, réessayer |
 
 La page lit l’offre désignée à l’affichage, puis toutes les 5 minutes et à sa date de fin tant que la
-page reste ouverte : une offre créée est visible dès la page suivante ; une offre terminée en avance
-disparaît des pages ouvertes en 5 minutes au plus, et à sa date de fin, tout de suite. Sans `offre`
+page reste ouverte : une offre créée est visible dès la page suivante ; à sa date de fin, elle disparaît
+tout de suite des pages ouvertes. Une offre terminée en avance disparaît à la relecture réussie suivante :
+normalement sous 5 minutes dans un onglet actif (un onglet masqué relit à son retour). Si la base ne
+répond pas, la page garde la dernière réponse valide jusqu’à la relecture réussie suivante, et au plus
+jusqu’à la date de fin de l’offre. Sans `offre`
 dans le lien, la page ne lit aucune offre.
 
 ### Suivi des clics sur « S'abonner » (UTM)
