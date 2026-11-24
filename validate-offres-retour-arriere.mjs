@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
-import { sqlSauvegarde, sqlRestauration, lireSauvegarde } from './gift-links/supabase/sauvegarde/offres.mjs';
+import { sqlSauvegarde, sqlRestauration, sqlRetourArriere, lireSauvegarde } from './gift-links/supabase/sauvegarde/offres.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 const db = new PGlite();
@@ -105,8 +105,36 @@ try {
   await db.exec(sqlR);
   check(JSON.stringify(sansHorloge(await etat())) === JSON.stringify(sansHorloge(avant)), 'restauration sur la base intacte : aucun changement (rejouable)');
 
-  // ── 3. RETOUR ARRIÈRE (le DROP), puis restauration refusée tant que 018 n'est pas là.
-  await db.exec(readFileSync('gift-links/supabase/rollback/018-offres-abonnement.sql', 'utf8'));
+  // Sauvegarde incomplète ou altérée : refusée AVANT tout DROP (revue GPT du 24/11).
+  for (const [quoi, faux] of [
+    ['ligne incomplète', { ...sauvegarde, offres: [{ id: 'missing fields' }, ...sauvegarde.offres.slice(1)] }],
+    ['empreinte mal formée', { ...sauvegarde, empreinte: 'incorrect' }],
+    ['date hors forme', { ...sauvegarde, offres: sauvegarde.offres.map((o, i) => (i === 0 ? { ...o, ends_at: 'demain' } : o)) }],
+  ]) {
+    writeFileSync(join(dir, 'faux.json'), JSON.stringify([{ sauvegarde: faux }]));
+    check(cli('sql-retour-arriere', join(dir, 'faux.json')).status !== 0 && cli('sql-restauration', join(dir, 'faux.json')).status !== 0,
+      `sauvegarde refusée dès la génération : ${quoi}`);
+  }
+  const memeNombre = { ...sauvegarde, offres: sauvegarde.offres.map((o, i) => (i === 0 ? { ...o, label: 'Pirate' } : o)) };
+  const eAltere = await erreur(sqlRetourArriere(memeNombre));
+  await db.exec('ROLLBACK');
+  check(eAltere && /altérée/.test(eAltere), `retour arrière gardé : sauvegarde altérée à nombre de lignes égal, refusé (${eAltere})`);
+  check((await q("SELECT to_regclass('public.subscription_offers') AS t"))[0].t !== null, 'refus : table toujours là');
+
+  // Le marketing termine une offre APRÈS la sauvegarde : le retour arrière gardé refuse au lieu de perdre la fin.
+  {
+    const enCours = (await q("SELECT id FROM public.subscription_offers WHERE ended_at IS NULL AND ends_at > now() AND starts_at <= now() ORDER BY id LIMIT 1"))[0].id;
+    await db.exec('BEGIN');
+    await q('SELECT public.end_subscription_offer($1, $2)', [MARKETING, enCours]);
+    const e = await erreur(sqlRetourArriere(sauvegarde).replace(/^BEGIN;$/m, 'SAVEPOINT garde;').replace(/^COMMIT;$/m, 'RELEASE SAVEPOINT garde;'));
+    await db.exec('ROLLBACK'); // annule la fin de l'offre : la base revient à l'état sauvegardé
+    check(e && /offres différentes de la sauvegarde/.test(e), `retour arrière gardé : offre terminée après la sauvegarde, refusé (${e})`);
+  }
+  check(cli('sql-retour-arriere', fichier).status === 0, 'la ligne de commande rend le retour arrière gardé');
+  check(cli('sql-retour-arriere', fichier).stdout === sqlRetourArriere(sauvegarde), 'retour arrière gardé : même SQL par la ligne de commande');
+
+  // ── 3. RETOUR ARRIÈRE GARDÉ (le DROP), puis restauration refusée tant que 018 n'est pas là.
+  await db.exec(sqlRetourArriere(sauvegarde));
   check((await q("SELECT to_regclass('public.subscription_offers') AS t"))[0].t === null, 'retour arrière : table supprimée');
   const avant018 = await erreur(sqlR);
   check(avant018 && /appliquer 018/.test(avant018), `restauration refusée avant 018 (${avant018})`);
