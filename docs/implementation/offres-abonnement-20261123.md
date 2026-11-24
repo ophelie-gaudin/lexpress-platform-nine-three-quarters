@@ -1,8 +1,11 @@
 # Barre d’abonnement et offres du moment — 23 novembre 2026
 
-Préparation locale uniquement. Aucune migration appliquée, aucune fonction déployée, aucun
-message envoyé à Lovable, aucune publication. Chaque geste ci-dessous attend l’accord écrit
-d’Ophélie.
+Préparation locale et TEST uniquement. Aucune écriture PROD, aucune fonction déployée en PROD,
+aucune publication Lovable. Chaque geste PROD ci-dessous attend l’accord écrit d’Ophélie.
+
+**Revue adverse du 24/11 (GPT 6.1 Sol) : NO-GO, cinq constats, corrigés le 24/11** — détail au
+§ « Corrections après la revue du 24/11 » ; les gestes PROD (§ « Gestes proposés ») sont réécrits
+en conséquence, avec une check-list avant/après par étape.
 
 ## Origine : retours d’Enzo du 20/11 (ClickUp `124hhvu7c9d`), arbitrés par Ophélie le 23/11
 
@@ -23,8 +26,11 @@ d’Ophélie.
 - `gift-links/supabase/rollback/018-offres-abonnement.sql` : retour arrière.
 - `gift-links/functions/subscription-offers/` : fonction Edge de gestion (`index.ts`, bundle
   engendré par `npm run build`) ; validation partagée dans `gift-links/functions/_shared/offres.mjs`.
-- Lecteur : `docs/patches/reader-subscription-bar.patch`, sources après patch dans
-  `docs/reader-reference/src/`, message Lovable `lovable-subscription-bar-prompt.md`.
+- Lecteur : **la source de vérité est la demande de fusion GitLab !1** du dépôt Lovable
+  (`groupelexpress/software/ia/pixel-perfect-render-5344`, branche `feat/barre-abonnement-offres`).
+  `docs/patches/reader-subscription-bar.patch`, `docs/reader-reference/src/` et
+  `lovable-subscription-bar-prompt.md` sont l’état du 23/11, **historique** : ne pas les coller
+  dans Lovable (ils n’ont ni la règle `s` seul, ni la relecture de l’offre).
 - Tests : `validate-subscription-offers.mjs` (base PGlite, fonction exécutée contre elle),
   `validate-reader-offers.mjs` (patch, types stricts, rendu simulé). `npm test` les lance.
 
@@ -99,16 +105,18 @@ numérique était enregistré vide.
   et le commentaire de colonne. Les identifiants déjà enregistrés restent (purge à 90 jours).
 - `validate-send-id.mjs` (dans `npm test`) : 32 hexa, identifiant numérique, valeurs bricolées,
   refus inchangés, purge, retour arrière et rejeu.
-- Lecteur : **rien à changer, rien à publier** — il transmet `s` tel quel à la RPC et le recopie sur
-  le bouton. Liste blanche des paramètres inchangée.
+- Lecteur : **à publier AVANT 019** (revue du 24/11, constat 1). La page publiée le 20/10 envoie
+  `at_recipient_id` en priorité sur `s` ; avec 019, `?s=123456789012&at_recipient_id=987654321`
+  enregistrerait l’identifiant du contact. La page de !1 ne prend que `s` (voir § Corrections).
+  Liste blanche des paramètres recopiés sur le bouton inchangée.
 
 Fait le 24/11/2026 sur TEST (`gsvvcrhagatwjwyyjkli`) : 019 appliquée, trois cas vérifiés par la RPC
 publique et en base, retour arrière puis ré-application vérifiés. Preuves : § « Recette 019 » du
 compte rendu de PR.
 
-**Ordre de déploiement PROD** : indépendant de 018 et du lecteur. L’appliquer après 018 (ordre des
-numéros) et **avant le premier e-mail HubSpot qui porte `s`** ; un e-mail parti avant reste lisible,
-seule son attribution est perdue. Étape 1 bis ci-dessous.
+**Ordre de déploiement PROD** : **après la publication du lecteur de !1** (étape 4), et avant le
+premier e-mail HubSpot qui porte `s` ; un e-mail parti avant reste lisible, seule son attribution
+est perdue. Étape 5 ci-dessous.
 
 Recette TEST du 24/11 (`docs/evidence/send-id-019-test-20261124.json`), lien FR
 `7c363606…c5a4`, RPC `get_gift_article_for_edition_v2` appelée avec la clé `anon`, lectures marquées
@@ -127,21 +135,59 @@ Empreinte de la fonction : `254b463c…` avant, `49b03243…` après, `254b463c�
 droits identiques à chaque étape. Effacer ces lectures de recette si besoin :
 `DELETE FROM public.gift_link_opens WHERE utm_source = 'Recette019';`
 
+## Corrections après la revue du 24/11
+
+Revue adverse GPT 6.1 Sol du 24/11 : NO-GO. Constats et corrections. Preuves TEST :
+`docs/evidence/revue-20261124-corrections-test.json`.
+
+| # | Constat | Correction | Où |
+| --- | --- | --- | --- |
+| 1 | `?s=123456789012&at_recipient_id=987654321` enregistrait l’identifiant du contact (la page prend `at_recipient_id` en priorité, 019 l’accepte) | La page ne prend que `s`. `at_recipient_id` n’est repris que s’il a exactement 32 hexadécimaux minuscules (seule forme que la base gardait avant 019) **et** que `s` est absent ou vide. 019 s’applique après la page | lecteur `src/lib/giftArticle.ts` (`sendIdFrom`), tests `tests/giftArticleV2.test.ts` ; en-tête de 019 ; README, `docs/frontend.md` |
+| 2 | Une offre terminée en avance restait sur les pages ouvertes ; à sa date de fin, bouton par défaut au lieu de l’offre longue qu’elle recouvrait | La barre relit l’offre toutes les 5 minutes (**proposé, optionnel** : `OFFER_REFRESH_MS`) et une seconde après la fin de l’offre affichée. Échec passager (réseau, délai, 5xx, 408, 429) : la dernière offre valide reste, et disparaît quand même à sa date de fin ; refus (4xx) : bouton par défaut. Jamais de bouton cassé | lecteur `src/components/SubscribeButton.tsx`, `src/lib/subscriptionOffer.ts`, test monté `tests/subscribeBar.test.tsx` |
+| 3 | Retour arrière de 018 = perte des offres et des droits | Interrupteur réversible préféré ; sauvegarde et restauration testées ; DROP en dernier recours | `gift-links/supabase/sauvegarde/offres.mjs`, `validate-offres-retour-arriere.mjs`, § 6 |
+| 4 | Rien n’empêchait un Publish depuis la branche de recette (tout en base TEST) | Étape obligatoire avant Publish (§ 4) et test automatique : `tests/deployment.test.ts` échoue si un domaine public lit la base TEST | lecteur, § 4 |
+| 5 | Base TEST : `anon`/`authenticated` avaient TRUNCATE (et REFERENCES, TRIGGER, MAINTAIN) sur 4 tables et 2 vues ; la PROD ne leur donne rien | Retirés sur TEST seulement ; droits TEST et PROD comparés | `gift-links/supabase/test-seulement/droits-alignes-prod-20261124.sql` |
+
+Constat 1, liens existants : aucun code interne n’émet `at_recipient_id` (agent WhatsApp, `origin/main`
+du 24/11 : seuls `s` et le `recipient_id` des statuts Meta, un téléphone, sans lien avec la page). Mais
+la page PROD le prend en priorité depuis le 20/10 (commit Lovable `2be6d47`), c’est le nom
+AT Internet/Piano de l’identifiant destinataire, et un outil d’envoi externe peut l’émettre : la
+compatibilité stricte ci-dessus est gardée par prudence. Limite : 32 chiffres sont aussi 32
+hexadécimaux, donc acceptés, comme avant 019.
+
+Constat 2, coût : une requête par page ouverte toutes les 5 minutes (suspendue dans un onglet
+masqué, rattrapée au retour), sur `get_subscription_offer`, fonction SQL `STABLE` : PostgreSQL y
+interdit toute écriture, aucune lecture d’article n’est comptée (test monté : seules des requêtes
+`get_subscription_offer` partent).
+
+Constat 5, écarts restants entre TEST et PROD (relevé du 24/11, PROD en lecture seule) :
+- les objets de 018 (table `subscription_offers`, 10 fonctions), présents en TEST seulement : attendu ;
+- droits par défaut du schéma `supabase_functions` (extension webhooks), en TEST seulement, hors schéma
+  `public` ;
+- communs aux deux bases, non corrigés (hors périmètre, à décider) : `anon` et `authenticated` ont
+  `USAGE, SELECT, UPDATE` sur la séquence `gift_link_opens_id_seq` (non exposée par l’API REST) ; les
+  droits par défaut du schéma `public` donnent tous les droits à `anon` sur toute future table, que
+  chaque migration doit donc retirer, comme 018 le fait.
+
 ## Gestes proposés — après accord écrit uniquement
 
-Ordre : 1 migration, 2 fonction, 3 droit du jeton marketing, 4 lecteur. Le lecteur est
-inoffensif sans offre, mais publié avant la migration il ferait un appel en 404 par page.
+Ordre : 1 migration 018, 2 fonction, 3 droit du jeton marketing, 4 lecteur (fusion de !1 puis
+Publish), 5 migration 019. Le lecteur est inoffensif sans offre, mais publié avant 018 il ferait un
+appel refusé par page (bouton par défaut). 019 doit suivre le lecteur (constat 1).
+
+Chaque étape : check-list **avant** (si un point échoue, ne pas commencer) et **après** (si un point
+échoue, retour arrière de l’étape, § 6). Toutes les requêtes de contrôle PROD sont en lecture seule :
+les préfixer de `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY;`.
 
 ### 0. TEST d’abord
 
 La base TEST est la branche Supabase persistante `test-europe` du projet, ref
 `gsvvcrhagatwjwyyjkli` (URL `https://gsvvcrhagatwjwyyjkli.supabase.co`). Mêmes gestes que
-ci-dessous en remplaçant la ref PROD par celle-ci : appliquer 018, déployer la fonction, créer
-un jeton de recette avec le droit, puis une offre France et une offre polonaise de recette
-(§ « Créer une offre » du README). Les transmettre avec le message Lovable.
+ci-dessous en remplaçant la ref PROD par celle-ci.
 
 Fait le 23/11/2026 : 018, fonction v1 et jeton `marketing-offres-test` en place sur TEST ;
-54 contrôles HTTP sur 54 et retour arrière vérifiés.
+54 contrôles HTTP sur 54 et retour arrière vérifiés. Le 24/11 : 019, droits alignés sur la PROD,
+interrupteur, sauvegarde et restauration vérifiés (preuves ci-dessus).
 
 Nettoyage d’une recette : l’API ne supprime pas une offre, elle la termine (`DELETE`). Pour
 effacer les offres de recette sur TEST, après les avoir terminées :
@@ -149,13 +195,11 @@ effacer les offres de recette sur TEST, après les avoir terminées :
 
 ### 1. Migration 018 (PROD `ovifzentveeehhtlnugk`)
 
-Contrôles préalables en lecture seule :
-
-```sql
-SELECT to_regclass('public.subscription_offers');                 -- attendu : NULL
-SELECT column_name FROM information_schema.columns
- WHERE table_name = 'api_clients' AND column_name = 'manage_offers'; -- attendu : aucune ligne
-```
+Avant :
+- [ ] `npm ci && npm test` vert sur la tête de la PR.
+- [ ] `SELECT to_regclass('public.subscription_offers');` → NULL.
+- [ ] `SELECT column_name FROM information_schema.columns WHERE table_name = 'api_clients' AND column_name = 'manage_offers';` → aucune ligne.
+- [ ] Droits publics actuels relevés (pour comparer après) : requête du § « Relevé des droits » ci-dessous → aucune ligne attendue.
 
 Préparer le corps de requête sans l’exécuter, depuis le worktree de la PR :
 
@@ -177,25 +221,83 @@ curl --fail-with-body --silent --show-error \
   --data-binary @/tmp/platform934-offres-migration.json
 ```
 
-Contrôles après, en lecture seule :
+Après :
+- [ ] `SELECT relrowsecurity FROM pg_class WHERE oid = 'public.subscription_offers'::regclass;` → true.
+- [ ] `SELECT count(*) FROM pg_policies WHERE tablename = 'subscription_offers';` → 0.
+- [ ] Relevé des droits → toujours aucune ligne (la table n’ajoute aucun droit public).
+- [ ] `SELECT count(*) FROM public.api_clients WHERE manage_offers;` → 0.
+- [ ] Clé publique du lecteur : `POST /rest/v1/rpc/get_subscription_offer` avec `{"p_site":"www.lexpress.fr"}` → HTTP 200, `[]` ; `GET /rest/v1/subscription_offers` → refus (401 ou 403), jamais une liste.
+
+**Relevé des droits** (TEST et PROD doivent rendre aucune ligne) :
 
 ```sql
-SELECT relrowsecurity FROM pg_class WHERE oid = 'public.subscription_offers'::regclass;  -- true
-SELECT count(*) FROM pg_policies WHERE tablename = 'subscription_offers';               -- 0
-SELECT grantee, privilege_type FROM information_schema.role_table_grants
- WHERE table_name = 'subscription_offers' AND grantee IN ('anon','authenticated');      -- aucune ligne
-SELECT count(*) FROM public.api_clients WHERE manage_offers;                            -- 0
+SELECT c.relname, r, p FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN unnest(ARRAY['anon','authenticated']) r
+CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p
+WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','f') AND has_table_privilege(r, c.oid, p);
 ```
 
-Contrôle d’exposition par l’API REST avec la clé publique du lecteur : `POST
-/rest/v1/rpc/get_subscription_offer` avec `{"p_site":"www.lexpress.fr"}` → HTTP 200, `[]`.
-Puis `GET /rest/v1/subscription_offers` avec la même clé → refus (401 ou 403), jamais une liste.
+### 2. Fonction `subscription-offers`
 
-Retour arrière : voir § 5.
+Avant :
+- [ ] Étape 1 faite et vérifiée.
+- [ ] `npm run build` ; le bundle `gift-links/functions/subscription-offers/index.bundle.ts` est celui de la tête de la PR (`git status` propre).
 
-### 1 bis. Migration 019 (PROD `ovifzentveeehhtlnugk`)
+Après accord, même POST multipart que pour `create-gift-links`, vers
+`/v1/projects/ovifzentveeehhtlnugk/functions/deploy?slug=subscription-offers`, avec
+`verify_jwt:false` (l’authentification est le jeton de service, comme `create-gift-links`),
+entrypoint `index.ts`, fichier `gift-links/functions/subscription-offers/index.bundle.ts`.
 
-Contrôle préalable en lecture seule — la définition doit être celle de 015, dont 019 repart :
+Après :
+- [ ] Sans en-tête → 401 ; avec un jeton existant sans le droit → 403 sur `GET`.
+- [ ] `create-gift-links` répond comme avant (un appel de contrôle sans jeton → 401).
+- [ ] Aucune offre de recette en PROD.
+
+### 3. Jeton du marketing
+
+Avant :
+- [ ] Étape 2 faite et vérifiée.
+
+Créer un jeton dédié (`marketing-offres`, procédure « Créer un jeton » du README), puis lui
+accorder le droit, dans l’éditeur SQL :
+
+```sql
+UPDATE public.api_clients SET manage_offers = true WHERE name = 'marketing-offres';
+```
+
+Après :
+- [ ] `SELECT name FROM public.api_clients WHERE manage_offers;` → `marketing-offres` seul.
+- [ ] `GET` (README, « Lister les offres ») → HTTP 200, `"offers": []`.
+
+### 4. Lecteur (Lovable) — fusion de !1, puis Publish
+
+Le lecteur se livre par la demande de fusion GitLab !1 (`feat/barre-abonnement-offres` vers
+`main`), que Lovable synchronise. **Aucun message dans le chat Lovable.** La branche
+`recette/offres-test` lit la base TEST partout, domaines publics compris : elle ne doit **jamais**
+être fusionnée ni publiée.
+
+Avant la fusion :
+- [ ] Dans un clone propre de !1 : `bun install --frozen-lockfile && bun test && bun run build` et `npx tsc --noEmit -p .` verts.
+- [ ] `tests/deployment.test.ts` vert : les domaines publics (`articles.lexpress.fr`, `articles.lexpress.eu`, `pixel-perfect-render-5344.lovable.app`) lisent la PROD. Ce test échoue, volontairement, sur `recette/offres-test`.
+
+**Étape obligatoire avant Publish** (constat 4) :
+- [ ] Lovable est branché sur **`main`** (réglages du projet → GitLab → branche) et non sur `recette/offres-test` ni `feat/…`.
+- [ ] Le dernier commit synchronisé dans Lovable est **la tête de `main` après fusion** : comparer avec `git ls-remote <dépôt> refs/heads/main` (SHA complet).
+- [ ] `git show <ce SHA>:src/lib/deployment.ts` sélectionne la base selon `context.environment` (et non `databases.TEST` en dur), et `bun test tests/deployment.test.ts` est vert à ce SHA.
+- [ ] Capture de la publication actuelle (pour le retour arrière).
+
+Publish sur accord écrit seulement.
+
+Après Publish (ne compte aucune lecture) :
+- [ ] Ouvrir `https://articles.lexpress.fr/a/` suivi de 32 hexadécimaux qui ne sont pas un lien (par exemple `0000…0000`) : page « Ce lien n’existe pas » ; dans l’onglet Réseau du navigateur, l’appel `get_gift_article_for_edition_v2` part vers **`ovifzentveeehhtlnugk`** (un jeton inconnu ne crée pas de lecture). Idem sur `articles.lexpress.eu`.
+- [ ] Sur une page d’article déjà offert, ouverte par l’équipe, l’appel `get_subscription_offer` part vers `ovifzentveeehhtlnugk` et la barre affiche le bouton par défaut (aucune offre en PROD).
+- [ ] Un appel vers `gsvvcrhagatwjwyyjkli` depuis un domaine public = mauvaise branche publiée : restaurer immédiatement la publication capturée.
+
+### 5. Migration 019 (PROD `ovifzentveeehhtlnugk`) — après l’étape 4
+
+Avant :
+- [ ] Étape 4 faite et vérifiée : la page publiée est celle de !1 (`sendIdFrom` dans `src/lib/giftArticle.ts` au SHA publié).
+- [ ] La définition est celle de 015, dont 019 repart :
 
 ```sql
 SELECT md5(pg_get_functiondef('public.get_gift_article_for_edition(text,text,text,text,text,text,text)'::regprocedure));
@@ -206,7 +308,7 @@ Après accord, même préparation et même `curl` qu’au § 1, avec
 `gift-links/supabase/019-identifiant-envoi-elargi.sql` (fichier JSON
 `/tmp/platform934-envoi-migration.json`).
 
-Contrôles après, en lecture seule :
+Après :
 
 ```sql
 SELECT md5(pg_get_functiondef(oid)), prosrc LIKE '%^[A-Za-z0-9_-]{1,64}$%' AS elargi, proacl::text
@@ -221,53 +323,63 @@ e-mail HubSpot se vérifie ensuite par
 `SELECT send_id, opened_at FROM public.gift_link_opens WHERE utm_source = '<at_medium des e-mails>' ORDER BY id DESC LIMIT 5;`.
 
 Retour arrière : appliquer `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` par le
-même endpoint. Aucun ordre à respecter avec le lecteur.
+même endpoint, à tout moment.
 
-### 2. Fonction `subscription-offers`
+### 6. Retour arrière
 
-`npm ci && npm test`, puis `npm run build`. Après accord, même POST multipart que pour
-`create-gift-links`, vers
-`/v1/projects/ovifzentveeehhtlnugk/functions/deploy?slug=subscription-offers`, avec
-`verify_jwt:false` (l’authentification est le jeton de service, comme `create-gift-links`),
-entrypoint `index.ts`, fichier `gift-links/functions/subscription-offers/index.bundle.ts`.
-Contrôles : sans en-tête → 401 ; avec un jeton existant sans le droit → 403 sur `GET`.
-Aucune offre de recette en PROD.
-
-### 3. Jeton du marketing
-
-Créer un jeton dédié (`marketing-offres`, procédure « Créer un jeton » du README), puis lui
-accorder le droit, dans l’éditeur SQL :
-
-```sql
-UPDATE public.api_clients SET manage_offers = true WHERE name = 'marketing-offres';
-```
-
-Vérifier par `GET` (README, « Lister les offres ») : HTTP 200, `"offers": []`.
-
-### 4. Lecteur (Lovable)
-
-Coller `docs/implementation/lovable-subscription-bar-prompt.md` (à partir de « Prépare cette
-modification »), suivi du contenu de `docs/patches/reader-subscription-bar.patch` et des liens
-TEST de l’étape 0. Recette TEST du message, build Lovable vert, puis publication sur accord
-écrit seulement.
-
-Le patch s’applique au lecteur issu du patch Europe (`reader-europe-hosts.patch`). Si ce
-dernier n’est pas encore publié, le message suffit : il décrit le comportement attendu sans
-dépendre du patch.
-
-### 5. Retour arrière
+Du plus doux au plus fort. Toujours commencer par le premier geste qui suffit.
 
 - **Lecteur** : restaurer la publication Lovable capturée avant intervention. Sans risque
   pour les données.
-- **Couper une offre** sans rien retirer : `DELETE` de l’API (README), ou
-  en SQL, que l’offre soit en cours ou à venir :
+- **Couper une offre** sans rien retirer : `DELETE` de l’API (README), ou en SQL, que l’offre soit
+  en cours ou à venir :
   `UPDATE public.subscription_offers SET ended_at = now() WHERE id = '<id>' AND ended_at IS NULL;`
+  Les pages ouvertes la quittent à leur relecture suivante (5 minutes au plus).
 - **Couper le marketing** : `UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-offres';`
+- **Interrupteur réversible : couper toutes les offres d’un coup** (préféré au DROP) — aucune donnée
+  touchée, droits rendus à l’identique :
+
+  ```sql
+  REVOKE EXECUTE ON FUNCTION public.get_subscription_offer(text) FROM anon, authenticated;
+  -- remettre :
+  GRANT EXECUTE ON FUNCTION public.get_subscription_offer(text) TO anon, authenticated;
+  ```
+
+  Effet : la RPC est refusée (HTTP 401/403) ; la page affiche le bouton par défaut au chargement, et
+  les pages ouvertes à leur relecture suivante (5 minutes au plus). Contrôle après coupure : appel
+  `get_subscription_offer` avec la clé publique → refus. Contrôle après remise : `{"p_site":"www.lexpress.fr"}`
+  → HTTP 200, et l’ensemble des droits de la fonction est le même qu’avant (l’ordre d’affichage de
+  `proacl` peut changer, pas son contenu). Variante plus lente : terminer chaque offre en cours par
+  l’API (`DELETE`), puis la recréer pour revenir en arrière.
 - **Fonction** : la supprimer dans le tableau de bord (Edge Functions → `subscription-offers`
   → Delete). Aucune autre fonction n’en dépend.
-- **SQL** : seulement après le retour arrière du lecteur. Sauvegarder d’abord
-  `SELECT * FROM public.subscription_offers;` (copie privée), puis appliquer
-  `gift-links/supabase/rollback/018-offres-abonnement.sql` par le même endpoint. Supprime la
-  table, ses fonctions et la colonne `manage_offers` ; liens, articles, lectures et jetons
-  restent. Rejouer 018 ensuite est possible (testé), le droit repart à faux : **réaccorder ensuite
-  `manage_offers` au jeton marketing** (`UPDATE … SET manage_offers = true WHERE name = 'marketing-offres';`).
+- **SQL de 018 — dernier recours, avec perte évitée par la sauvegarde.** Seulement après le retour
+  arrière du lecteur ou l’interrupteur.
+
+  Avant :
+  - [ ] Sauvegarde prise et lisible :
+
+    ```sh
+    node gift-links/supabase/sauvegarde/offres.mjs sql-sauvegarde > /tmp/p934-sauvegarde.sql
+    # même curl qu'au § 1 avec ce fichier, réponse écrite dans un fichier privé (umask 077), par exemple
+    # ~/.config/lexpress/sauvegardes/offres-<date>.json
+    node gift-links/supabase/sauvegarde/offres.mjs sql-restauration ~/.config/lexpress/sauvegardes/offres-<date>.json > /tmp/p934-restauration.sql
+    ```
+
+    La seconde commande doit réussir : elle prouve que la sauvegarde est complète et lisible.
+  - [ ] Nombre d’offres et de jetons avec le droit relevés (`SELECT count(*) FROM public.subscription_offers;`,
+        `SELECT name FROM public.api_clients WHERE manage_offers;`) et égaux à ceux de la sauvegarde.
+
+  Puis appliquer `gift-links/supabase/rollback/018-offres-abonnement.sql` par le même endpoint.
+  Supprime la table, ses fonctions et la colonne `manage_offers` ; liens, articles, lectures et jetons
+  restent.
+
+  Après :
+  - [ ] `SELECT to_regclass('public.subscription_offers');` → NULL ; relevé des droits → aucune ligne.
+
+  **Restauration** : ré-appliquer 018 (§ 1), puis `/tmp/p934-restauration.sql` par le même endpoint.
+  Le script vérifie, avant de valider, que les offres (dates à la microseconde) et les jetons qui ont
+  le droit sont exactement ceux de la sauvegarde ; sinon il annule tout. Il refuse une sauvegarde
+  altérée et une base sans 018. Rejouable. Testé (`validate-offres-retour-arriere.mjs`, PGlite :
+  sauvegarde, retour arrière, ré-application, restauration, puis offres, droits, réponses de la page et
+  liste du marketing identiques).
