@@ -1,0 +1,209 @@
+{
+ "date": "2026-11-24",
+ "niveau": "TEST (gsvvcrhagatwjwyyjkli) ; PROD lue seulement, en transaction READ ONLY",
+ "constat_1_identifiant_envoi": {
+  "methode": "getGiftArticle de la page !1 (feat/barre-abonnement-offres) appelée contre la base TEST (019 appliquée, empreinte 49b03243c26cf98b4586a074ddcb0a91), puis relevé de gift_link_opens.send_id ; lectures marquées utm_source=Recette20261124",
+  "resultats": [
+   {
+    "cas": "?s=123456789012&at_recipient_id=987654321 (scénario de la revue)",
+    "page": "!1",
+    "send_id": "123456789012"
+   },
+   {
+    "cas": "?at_recipient_id=987654321",
+    "page": "!1",
+    "send_id": null
+   },
+   {
+    "cas": "?at_recipient_id=<32 hexa>",
+    "page": "!1",
+    "send_id": "0123456789abcdef0123456789abcdef"
+   },
+   {
+    "cas": "?s=123456789012&at_recipient_id=<32 hexa>",
+    "page": "!1",
+    "send_id": "123456789012"
+   },
+   {
+    "cas": "?s=123456789012&at_recipient_id=987654321",
+    "page": "règle de la page PROD du 20/10 (at_recipient_id || s)",
+    "send_id": "987654321",
+    "note": "le défaut, reproduit sur TEST avec 019"
+   }
+  ],
+  "nettoyage": "DELETE FROM public.gift_link_opens WHERE utm_source = 'Recette20261124';"
+ },
+ "constat_2_offre_relue": {
+  "methode": "vrai composant SubscribeBar monté (happy-dom, temps réel) contre la base TEST ; offres créées et terminées par l'API marketing TEST (jeton marketing-offres-test) ; offre longue = 'Recette – offre FR' (23/11)",
+  "journal": [
+   {
+    "at": "2026-11-24T10:03:41.380Z",
+    "phase": "echeance",
+    "creation": 201,
+    "id": "c5f7a5e4-6128-4263-b808-d1a8b272b84c",
+    "ends_at": "2026-11-24T10:04:20.980Z"
+   },
+   {
+    "at": "2026-11-24T10:03:44.392Z",
+    "phase": "echeance",
+    "label": "Recette Flash échéance",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=FLASH1&at_medium=Recette20261124&s=123456789012"
+   },
+   {
+    "at": "2026-11-24T10:04:23.982Z",
+    "phase": "echeance",
+    "label": "Recette – offre FR",
+    "href": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=RECETTE&at_medium=Recette20261124&s=123456789012",
+    "requests": 2
+   },
+   {
+    "at": "2026-11-24T10:04:24.387Z",
+    "phase": "anticipee",
+    "creation": 201,
+    "id": "30b66392-04f4-4313-96da-34d59ae9bb2a"
+   },
+   {
+    "at": "2026-11-24T10:04:27.389Z",
+    "phase": "anticipee",
+    "label": "Recette Flash anticipée"
+   },
+   {
+    "at": "2026-11-24T10:04:27.655Z",
+    "phase": "anticipee",
+    "suppression": 200,
+    "result": "ended"
+   },
+   {
+    "at": "2026-11-24T10:09:27.734Z",
+    "phase": "anticipee",
+    "label": "Recette – offre FR",
+    "delai_ms": 300078
+   },
+   {
+    "at": "2026-11-24T10:09:27.738Z",
+    "phase": "fin",
+    "requetes_rest": 4,
+    "rpc": [
+     "gsvvcrhagatwjwyyjkli.supabase.co get_subscription_offer"
+    ]
+   }
+  ],
+  "conclusion": "échéance : Flash puis offre longue à la fin (2 requêtes) ; fin anticipée : offre longue 300,078 s après le DELETE (une période de relecture) ; seules des requêtes get_subscription_offer"
+ },
+ "constat_3_retour_arriere": {
+  "journal": [
+   "== interrupteur",
+   "avant: 200 [{\"label\":\"Recette – offre FR\",\"url\":\"https://abonnements-digitaux.lexpress.fr/offres?refTarif=RECETTE\",\"ends_at\":\"202 acl=[{\"acl\":\"anon=X/postgres,authenticated=X/postgres,postgres=X/postgres,service_role=X/postgres\"}]",
+   "[]coupé: 401 {\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"permission denied for function get_subscription_offer\"}",
+   "[]remis: 200 [{\"label\":\"Recette – offre FR\",\"url\":\"https://abonnements-digitaux.lexpress.fr/offres?refTarif=RECETTE\",\"ends_at\":\"202 acl=[{\"acl\":\"anon=X/postgres,authenticated=X/postgres,postgres=X/postgres,service_role=X/postgres\"}]",
+   "== sauvegarde",
+   "offres 6 droits ['marketing-offres-test'] empreinte 34b6180582c2df9bba9b2a9d57790209",
+   "restauration générée     8295 octets",
+   "restauration à blanc (base intacte): []",
+   "== DROP (rollback 018)",
+   "[]",
+   "après DROP: [{\"t\":null,\"col\":0}] page: 404 {\"code\":\"PGRST202\",\"details\":\"Searched for the function public.get_subscription_offer with parameter p_site or with a si",
+   "== ré-application 018 + restauration",
+   "[]",
+   "page avant restauration: 200 []",
+   "restauration: []",
+   "identique offres True droits True empreinte True",
+   "page après: 200 [{\"label\":\"Recette – offre FR\",\"url\":\"https://abonnements-digitaux.lexpress.fr/offres?refTarif=RECETTE\",\"ends_at\":\"202 acl=[{\"acl\":\"anon=X/postgres,authenticated=X/postgres,postgres=X/postgres,service_role=X/postgres\"}]"
+  ],
+  "sauvegarde": "fichier privé ~/.config/lexpress/sauvegardes/offres-test-20261124.json (hors dépôt)",
+  "api_apres": "GET subscription-offers TEST : 200, 6 offres, offres affichées inchangées"
+ },
+ "constat_4_domaines_publics": {
+  "feat/barre-abonnement-offres": "bun test : 57 pass, 0 fail (tests/deployment.test.ts compris)",
+  "recette/offres-test": "bun test : tests/deployment.test.ts échoue (2 tests) comme prévu ; échec 'European catalogue boundary' déjà présent avant (f81703d)"
+ },
+ "constat_5_droits": {
+  "avant_TEST": {
+   "api_clients": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}",
+   "articles": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_opens": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_reads_by_campaign": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links_by_client": "{postgres=arwdDxtm/postgres,anon=Dxtm/postgres,authenticated=Dxtm/postgres,service_role=arwdDxtm/postgres}"
+  },
+  "apres_TEST": {
+   "api_clients": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "articles": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_opens": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_reads_by_campaign": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links_by_client": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+  },
+  "PROD": {
+   "api_clients": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "articles": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_opens": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_link_reads_by_campaign": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+   "gift_links_by_client": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+  },
+  "releve_droits_effectifs_apres": {
+   "TEST": [],
+   "PROD": []
+  },
+  "ecarts_restants": [
+   "objets de 018 présents en TEST seulement (attendu)",
+   "droits par défaut du schéma supabase_functions en TEST seulement (hors public)",
+   "communs : séquence gift_link_opens_id_seq USAGE,SELECT,UPDATE pour anon/authenticated ; droits par défaut de public pour anon sur futures tables"
+  ]
+ },
+ "seconde_revue_gpt_6_1_sol": {
+  "verdict_recu": "NO-GO : 019 élargissait les RPC existantes (ancien onglet / retour arrière du lecteur = identifiant de contact enregistré) ; DROP possible sans preuve de restaurabilité ; modification entre sauvegarde et DROP perdue ; coupure pendant la lecture du corps = offre effacée",
+  "019_v3_TEST": {
+   "etapes": [
+    "019 nouvelle refusée tant que l'ancienne 019 était en place (garde)",
+    "rollback/019 : fonction 015 remise",
+    "019 nouvelle appliquée"
+   ],
+   "empreintes_TEST_apres": {
+    "get_gift_article": "abd4415db6201b4bb88f7f11091fe76d",
+    "get_gift_article_for_edition": "254b463cfdba9db7bdc326f40d38d788",
+    "get_gift_article_for_edition_v2": "dc85109961ed63757792da869fbace7d",
+    "get_gift_article_for_edition_v3": "2b384d83e5d38190b3d91b1eaf4d25dc"
+   },
+   "empreintes_PROD_lues": {
+    "get_gift_article": "abd4415db6201b4bb88f7f11091fe76d",
+    "get_gift_article_for_edition": "254b463cfdba9db7bdc326f40d38d788",
+    "get_gift_article_for_edition_v2": "dc85109961ed63757792da869fbace7d"
+   },
+   "lectures_marquees": "utm_source=Recette20261124b",
+   "resultats": [
+    {
+     "cas": "page !1 (v3) ?s=123456789012&at_recipient_id=987654321",
+     "send_id": "123456789012"
+    },
+    {
+     "cas": "page !1 (v3) ?at_recipient_id=987654321",
+     "send_id": null
+    },
+    {
+     "cas": "page !1 (v3) ?at_recipient_id=<32 hexa>",
+     "send_id": "0123456789abcdef0123456789abcdef"
+    },
+    {
+     "cas": "page !1 (v3) ?s=123456789012&at_recipient_id=<32 hexa>",
+     "send_id": "123456789012"
+    },
+    {
+     "cas": "ancienne page (v2, at_recipient_id || s) ?s=123456789012&at_recipient_id=987654321, 019 en place",
+     "send_id": null
+    }
+   ]
+  },
+  "retour_arriere_garde_TEST": [
+   "génération OK",
+   "essai à blanc: []",
+   "retour arrière gardé: []",
+   "après: [{\"t\":null,\"col\":0}]",
+   "018: []",
+   "restauration: []",
+   "offres 6 identique True True True",
+   "relevé droits publics TEST: []"
+  ]
+ }
+}
