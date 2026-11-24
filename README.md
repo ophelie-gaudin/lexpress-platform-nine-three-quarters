@@ -15,7 +15,7 @@ le peuvent tout autant.
 | --- | --- |
 | **un lien, tout de suite, sans terminal** — coller une adresse dans une page et recevoir un lien | **[l'interface web](interface/README.md)** |
 | **offrir des articles depuis votre service** — appeler l’API depuis une chaîne n8n, une newsletter, un outil interne | **Partie I**, ci-dessous |
-| **changer l’offre du bouton « S'abonner »** — marketing, pour une période donnée | **[Partie I, « L’offre d’abonnement du moment »](#loffre-dabonnement-du-moment-marketing)** |
+| **mettre une offre sur le bouton « S'abonner » d’un envoi** — marketing, pour une période donnée | **[Partie I, « Les offres d’abonnement »](#les-offres-dabonnement-marketing)** |
 | **reprendre le service** — l’installer ailleurs, le corriger, le déployer, administrer les jetons | **Partie II**, plus bas |
 
 L’interface web demande une clé d’accès partagée, puis votre jeton — qu’elle scelle dans un cookie
@@ -279,7 +279,7 @@ déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec 
 savoir combien de fois vos liens ont été lus, ou lesquels vous avez créés, demandez-le à la personne
 responsable du service — les deux vues existent, elles sont décrites en Partie II.
 
-## L’offre d’abonnement du moment (marketing)
+## Les offres d’abonnement (marketing)
 
 La page de lecture n’a qu’**une barre « S'abonner », collée en bas de l’écran**. Par défaut,
 chaque site garde son texte et son lien, dans sa langue :
@@ -294,16 +294,34 @@ chaque site garde son texte et son lien, dans sa langue :
 Le site est celui de l’article offert : un article de pl.lexpress.eu, lu sur
 articles.lexpress.eu, prend l’offre de `pl.lexpress.eu`.
 
-Le marketing peut y mettre **l’offre du moment** (Black Friday, rentrée…) pour une période
-donnée, par l’API, sans publication de la page. Hors offre, ou si la lecture de l’offre
-échoue, la page garde son bouton par défaut — jamais un bouton cassé.
+Le marketing peut y mettre **une offre** (Black Friday, rentrée…) pour une période donnée, par
+l’API, sans publication de la page. **Une offre ne s’affiche que sur les articles offerts dont le
+lien la désigne** (décision du 24/11/2026, migration 020) : on ajoute au lien diffusé le paramètre
+`offre` (nom proposé) suivi du **code** de l’offre.
+
+```text
+lien sans offre   https://articles.lexpress.fr/a/<token>?at_medium=Email&s=<envoi>
+                  → bouton par défaut, toujours, même si des offres sont en cours
+lien avec offre   https://articles.lexpress.fr/a/<token>?offre=black-friday-2026&at_medium=Email&s=<envoi>
+                  → bouton de l’offre black-friday-2026, si elle est valable maintenant pour ce site
+```
+
+Avec `offre`, la page affiche l’offre seulement si elle existe, vise le site de l’article et que la
+date du jour est dans sa période. Sinon — date de fin dépassée, pas encore commencée, terminée en
+avance, code inconnu, autre site — **le bouton par défaut**, jamais l’offre. Si la lecture de l’offre
+échoue, aussi : jamais un bouton cassé. **Il n’existe plus d’offre « globale »** affichée sans
+paramètre, et plusieurs offres peuvent coexister, chacune activée par son propre lien. Le paramètre
+`offre` sert seulement à choisir l’offre : il n’est pas recopié sur le bouton.
+
+Le code n’est **pas un secret** : quiconque reçoit le lien (même transféré) voit l’offre, comme il
+voit l’article. Pour une offre réservée, ce n’est pas un contrôle d’accès.
 
 ### Le jeton
 
-Le même modèle de jeton par service que pour créer des liens (en-tête
-`x-gift-service-token`), mais **avec un droit en plus** : un jeton existant ne peut pas
-gérer les offres. Demander un jeton « offres » à la personne en charge du service (voir
-« Demander un accès »). Sans ce droit, l’API répond `403`.
+Le même jeton par service que pour créer des liens (en-tête `x-gift-service-token`), **avec le droit
+de gérer les offres** (`manage_offers`). Depuis le 24/11/2026 (migration 020), **un jeton créé a ce
+droit par défaut** ; les jetons créés avant ne l’ont pas, sauf accord jeton par jeton (Partie II,
+« Le droit de gérer les offres »). Sans ce droit, l’API répond `403`.
 
 Adresse : `https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers`
 
@@ -321,7 +339,8 @@ curl --silent -X POST \
         "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329",
         "label": "Black Friday : -50 %",
         "name": "black-friday-2026-fr",
-        "request_id": "black-friday-2026-fr-1"
+        "request_id": "black-friday-2026-fr-1",
+        "code": "black-friday-2026"
       }' \
   | python3 -m json.tool
 ```
@@ -335,6 +354,7 @@ curl --silent -X POST \
 | `label` | non | 1 à 40 caractères, une ligne, sans `<` `>` ; **tous les sites visés doivent être de la même langue** | le texte par défaut de chaque site, dans sa langue |
 | `name` | non | nom interne, pour s’y retrouver dans la liste ; 80 caractères au plus | — |
 | `request_id` | non, **recommandé** | clé choisie par vous, 1 à 100 caractères (lettres, chiffres, `. _ : -`) | — |
+| `code` | non | identifiant public de l’offre, mis dans le lien (`?offre=<code>`) : 3 à 40 caractères parmi `a-z` (minuscules sans accent), `0-9` et `-` ; **unique** : un code déjà pris, même par une offre terminée, est refusé (`409`) | un code court non devinable, tiré par l’API (16 caractères) |
 
 **Toujours envoyer un `request_id`.** Si la réponse se perd (coupure, délai) et que vous renvoyez
 la même requête, le service rend l’offre déjà créée au lieu d’en créer une seconde. Sans lui, un
@@ -352,27 +372,30 @@ Réponse `201` (valeurs fictives) :
 {
   "offer": {
     "id": "00000000-0000-4000-8000-000000000001",
+    "code": "black-friday-2026",
     "name": "black-friday-2026-fr",
     "sites": ["www.lexpress.fr"],
     "starts_at": "2026-11-26T23:00:00+00:00",
     "ends_at": "2026-12-01T22:59:00+00:00",
     "url": "https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329",
     "label": "Black Friday : -50 %",
-    "status": "scheduled"
+    "status": "scheduled",
+    "link_parameter": "offre=black-friday-2026"
   },
   "client": "marketing-offres"
 }
 ```
 
-`status` vaut `scheduled` (à venir), `active` (affichée selon la règle ci-dessous) ou `ended`.
-**Garder `id`** : c’est lui qui permet de terminer l’offre.
+`status` vaut `scheduled` (à venir), `active` (en cours : affichée sur les liens qui portent son
+code) ou `ended`. **Garder `code`** : c’est lui qu’on ajoute au lien diffusé (`link_parameter`), et
+il permet aussi de terminer l’offre (comme `id`).
 
 ### Plusieurs offres en même temps
 
-Si plusieurs offres sont en cours pour un même site, **la plus récemment commencée
-s’affiche** ; à début égal, la plus récemment créée (puis l’`id`). Une offre flash de deux jours posée
-pendant une offre d’un mois s’affiche donc pendant ses deux jours, puis l’offre du mois
-reprend toute seule.
+Plusieurs offres peuvent être en cours en même temps, sur le même site : chacune ne s’affiche que
+sur les liens qui portent son code. Une offre flash de deux jours et une offre d’un mois coexistent
+donc sans se gêner, chacune dans ses envois. (Jusqu’à la migration 020, la plus récemment commencée
+s’affichait pour tous : cette règle a disparu.)
 
 ### Lister les offres
 
@@ -381,19 +404,16 @@ curl --silent 'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscriptio
   -H 'x-gift-service-token: VOTRE_JETON' | python3 -m json.tool
 ```
 
-La réponse donne les offres à venir, en cours et terminées depuis moins de 30 jours
-(`offers`, 500 au plus, offres en cours d’abord ; `truncated: true` si la limite est atteinte), et
-pour chaque site l’offre affichée **en ce moment** (`displayed_now`, `null` = bouton par défaut),
-calculée par la même règle que la page :
+La réponse donne les offres à venir, en cours et terminées depuis moins de 30 jours, chacune avec
+son `code` (`offers`, 500 au plus, en cours d’abord, puis à venir, puis terminées ; `truncated: true`
+si la limite est atteinte). `displayed_now` a disparu avec la migration 020 : aucune offre ne
+s’affiche par défaut.
 
 ```json
 {
-  "offers": [ … ],
-  "displayed_now": {
-    "www.lexpress.fr": "00000000-0000-4000-8000-000000000001",
-    "www.lexpress.eu": null, "fr.lexpress.eu": null, "pl.lexpress.eu": null
-  },
+  "offers": [ { "id": "…", "code": "black-friday-2026", "status": "active", … } ],
   "truncated": false,
+  "link_parameter": "offre",
   "client": "marketing-offres"
 }
 ```
@@ -402,13 +422,15 @@ calculée par la même règle que la page :
 
 ```sh
 curl --silent -X DELETE \
-  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers?id=00000000-0000-4000-8000-000000000001' \
+  'https://ovifzentveeehhtlnugk.supabase.co/functions/v1/subscription-offers?code=black-friday-2026' \
   -H 'x-gift-service-token: VOTRE_JETON' | python3 -m json.tool
 ```
 
+Désigner l’offre par `?code=<code>` ou par `?id=<uuid>`, un seul des deux.
+
 `result` dit ce qui s’est passé : `cancelled` (l’offre n’avait pas commencé, elle ne
-s’affichera pas), `ended` (elle était en cours, elle se termine maintenant et le bouton par
-défaut revient), `already_ended` (rien à faire). L’offre reste dans la liste, `status: "ended"`
+s’affichera pas), `ended` (elle était en cours, elle se termine maintenant et ses liens
+retrouvent le bouton par défaut), `already_ended` (rien à faire). L’offre reste dans la liste, `status: "ended"`
 et `ended_at` renseigné ; ses dates ne changent pas, et un POST rejoué avec le même
 `request_id` la retrouve sans la rallumer. Pour **modifier** une offre : la terminer, puis en
 créer une nouvelle.
@@ -417,27 +439,30 @@ créer une nouvelle.
 | --- | --- |
 | 201 | offre créée |
 | 400 | champ invalide — le message dit lequel et pourquoi |
+| 409 | `code` déjà utilisé par une autre offre (un code n’est jamais réattribué) |
 | 401 | jeton absent, inconnu ou révoqué |
 | 403 | jeton valide, mais sans le droit de gérer les offres |
-| 404 | `DELETE` : offre inconnue |
+| 404 | `DELETE` : offre inconnue (id ou code) |
 | 405 | méthode autre que GET, POST, DELETE |
 | 503 | base indisponible, réessayer |
 
-La page lit l’offre à l’affichage : une offre créée est visible dès la page suivante, une
-offre terminée disparaît de même.
+La page lit l’offre désignée à l’affichage, puis toutes les 5 minutes et à sa date de fin tant que la
+page reste ouverte : une offre créée est visible dès la page suivante ; une offre terminée en avance
+disparaît des pages ouvertes en 5 minutes au plus, et à sa date de fin, tout de suite. Sans `offre`
+dans le lien, la page ne lit aucune offre.
 
 ### Suivi des clics sur « S'abonner » (UTM)
 
 Rien à faire côté offre : **le bouton reprend les paramètres de suivi de l’URL du lien
 offert**. Tout paramètre `at_*` (`at_medium`, `at_campaign`, `at_campaign_group`…) et `s`
 (identifiant d’envoi) présents dans l’adresse ouverte par le lecteur sont recopiés sur le lien
-du bouton ; rien d’autre (`utm_source`, `refTarif`, `redirect`… sont écartés).
+du bouton ; rien d’autre (`offre`, `utm_source`, `refTarif`, `redirect`… sont écartés).
 
 Avec une offre, **ces paramètres s’ajoutent à l’URL de l’offre**, qui garde les siens. Si
 le même paramètre est des deux côtés, celui du lecteur l’emporte.
 
 ```text
-lien diffusé   https://articles.lexpress.fr/a/<token>?s=<envoi>&at_medium=Newsletter&at_campaign=bf
+lien diffusé   https://articles.lexpress.fr/a/<token>?offre=black-friday-2026&s=<envoi>&at_medium=Newsletter&at_campaign=bf
 offre          https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329
 bouton         https://abonnements-digitaux.lexpress.fr/offres?refTarif=1329&s=<envoi>&at_medium=Newsletter&at_campaign=bf
 ```
@@ -519,6 +544,7 @@ Il existe une seule page dynamique de lecture, pas une page à générer par art
 | `interface/README.md` | Déploiement Vercel, variables, révocation |
 | `docs/frontend.md` | Contrat à respecter par la page Lovable |
 | `gift-links/supabase/018-offres-abonnement.sql` | Offres d’abonnement : table, droit `manage_offers`, RPC publique `get_subscription_offer` |
+| `gift-links/supabase/020-offre-par-parametre.sql` | Une offre ne s’affiche que par son lien (`?offre=<code>`), `get_subscription_offer(site, code)` ; `manage_offers` vrai par défaut pour les jetons créés |
 | `gift-links/functions/subscription-offers/index.ts` | API des offres : créer, lister, terminer |
 | `validate-subscription-offers.mjs`, `validate-reader-offers.mjs` | Tests des offres et de la barre du lecteur |
 
@@ -604,7 +630,12 @@ SELECT public.create_api_client(
 );
 ```
 
-La requête rend l'identifiant du client créé. Si vous collez autre chose qu'une empreinte bien formée —
+La requête rend l'identifiant du client créé. **Depuis la migration 020 (24/11/2026), ce jeton a aussi
+le droit de gérer les offres d’abonnement** (`manage_offers` vrai par défaut). Pour un service qui ne
+doit pas y toucher : `UPDATE public.api_clients SET manage_offers = false WHERE name = '<nom>';`
+(voir « Le droit de gérer les offres »).
+
+Si vous collez autre chose qu'une empreinte bien formée —
 64 caractères hexadécimaux minuscules — la contrainte la refusera. Mais **si vous collez le jeton, elle
 l'acceptera** : il a exactement la même forme. L'étape 5 est là pour attraper cette confusion.
 
@@ -659,20 +690,26 @@ SELECT public.revoke_api_client('newsletter-quotidienne');  -- rend true, ou fal
 
 La ligne **reste en base** : on garde la trace de ce que ce service a créé, et les liens qu’il a fabriqués continuent de fonctionner. Révoquer ferme la porte, cela n’efface pas l’histoire. Les autres services ne sont pas affectés — c’est tout l’intérêt d’un jeton par appelant.
 
-### Donner le droit de gérer les offres
+### Le droit de gérer les offres
 
-Un jeton ne gère les offres d’abonnement que si on le lui accorde. Créer d’abord un jeton
-dédié (par exemple `marketing-offres`, procédure ci-dessus), puis :
+**Depuis la migration 020 (décision d’Ophélie du 24/11/2026), un jeton créé par `create_api_client`
+a le droit de gérer les offres** (`manage_offers` vrai par défaut) : rien à faire pour un nouveau
+service. Les jetons créés **avant** n’ont pas été modifiés ; le droit s’accorde ou se retire jeton par
+jeton :
 
 ```sql
-UPDATE public.api_clients SET manage_offers = true  WHERE name = 'marketing-offres';  -- accorder
-UPDATE public.api_clients SET manage_offers = false WHERE name = 'marketing-offres';  -- retirer
+UPDATE public.api_clients SET manage_offers = true  WHERE name = 'hubspot-emails';   -- accorder
+UPDATE public.api_clients SET manage_offers = false WHERE name = 'n8n-agent-whatsapp'; -- retirer
+SELECT name, active, manage_offers FROM public.api_clients ORDER BY name;              -- relever
 ```
 
-Ne pas l’accorder aux jetons qui créent des liens (agent WhatsApp, newsletter) : un jeton
-fuité changerait le bouton de toutes les pages. Les offres sont lisibles en SQL dans
-`public.subscription_offers` ; la page, elle, ne voit que `get_subscription_offer` (libellé,
-URL, date de fin de l’offre en cours). Déploiement et retour arrière :
+Ce que le droit permet : créer, lister et terminer des offres, sur les quatre sites. Depuis 020, une
+offre ne s’affiche que sur les liens qui portent son code : un jeton fuité ne change plus le bouton de
+toutes les pages, mais peut créer une offre et diffuser des liens qui l’affichent, ou terminer une
+offre en cours. Pour un service qui ne doit pas y toucher, retirer le droit juste après la création.
+Les offres sont lisibles en SQL dans `public.subscription_offers` ; la page, elle, ne voit que
+`get_subscription_offer(site, code)` (libellé, URL, date de fin de l’offre désignée, si elle est
+valable maintenant). Déploiement et retour arrière :
 [docs/implementation/offres-abonnement-20261123.md](docs/implementation/offres-abonnement-20261123.md).
 
 ### Savoir qui a fait quoi
@@ -778,8 +815,9 @@ Utiliser un projet Supabase dédié. Appliquer **les douze fichiers de `gift-lin
 | `010-vues-security-invoker.sql` | les vues lisent avec les droits de qui les interroge |
 | `011-ne-jamais-degrader.sql` | un repli n'écrase plus un corps déjà diffusé ; la date de fin ne peut que croître |
 | `012-retention.sql` | la purge : ce qu'on garde, et combien de temps |
-| `018-offres-abonnement.sql` | les offres d’abonnement du moment, gérées par l’API `subscription-offers` |
+| `018-offres-abonnement.sql` | les offres d’abonnement, gérées par l’API `subscription-offers` |
 | `019-identifiant-envoi-elargi.sql` | ajoute `get_gift_article_for_edition_v3` (page de lecture) : `?s=` y accepte 1 à 64 caractères `A-Za-z0-9_-` (identifiant d’e-mail HubSpot) ; les anciennes RPC gardent 32 hexadécimaux |
+| `020-offre-par-parametre.sql` | une offre ne s’affiche que par son lien (`?offre=<code>`, `get_subscription_offer(site, code)`) ; un jeton créé a le droit de gérer les offres |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
