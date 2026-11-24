@@ -205,5 +205,22 @@
    "offres 6 identique True True True",
    "relevé droits publics TEST: []"
   ]
+ },
+ "troisieme_passe": {
+  "constats_recus": [
+   "essai à blanc de restauration écrivait (droit retiré ou offre supprimée remis)",
+   "rollback 019 supprimait v3 appelée par les onglets déjà chargés",
+   "contrôle GET avec jeton écrit calls/last_used_at (non annoncé)"
+  ],
+  "TEST": [
+   "rollback 019: []",
+   "v3 après rollback: HTTP 200",
+   "019: []",
+   "v3 après 019: HTTP 200",
+   "lectures: [{\"utm_campaign\":\"apres-rollback\",\"send_id\":null},{\"utm_campaign\":\"apres-019\",\"send_id\":\"123456789012\"}]",
+   "empreintes: {'get_gift_article_for_edition_v2': 'dc851099', 'get_gift_article_for_edition_v3': '2b384d83', 'get_gift_article_for_edition': '254b463c', 'get_gift_article': 'abd4415d'}",
+   "vérification TEST: []"
+  ],
+  "nettoyage": "DELETE FROM public.gift_link_opens WHERE utm_source IN ('Recette20261124','Recette20261124b','Recette20261124c');"
  }
 }

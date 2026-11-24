@@ -103,8 +103,8 @@ numérique était enregistré vide.
   page publiée le 20/10, qui préfère `at_recipient_id` (identifiant de contact possible), ne peut rien
   faire entrer, même depuis un onglet resté ouvert ou après un retour arrière du lecteur. Une garde
   refuse la migration si la fonction de 015 n’est pas stricte. Pas de `CHECK`. Rejouable.
-- `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` : supprime v3, remet la définition
-  exacte de 015 (répare une base où l’ancienne 019 avait été posée) et le commentaire de colonne. Les
+- `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` : garde v3 mais la rend stricte
+  (un onglet déjà chargé l’appelle encore), remet la définition exacte de 015 (répare une base où l’ancienne 019 avait été posée) et le commentaire de colonne. Les
   identifiants déjà enregistrés restent (purge à 90 jours).
 - `validate-send-id.mjs` (dans `npm test`) : anciennes RPC inchangées et strictes après 019, v3 =
   corps de 015 à trois écarts près, v3 = v2 dans tous les états, valeurs bricolées, purge, retour
@@ -180,7 +180,7 @@ Ordre : 1 migration 018, 2 fonction, 3 droit du jeton marketing, 4 migration 019
 de !1 puis Publish). Le lecteur de !1 appelle `get_subscription_offer` (018) et
 `get_gift_article_for_edition_v3` (019) : publié avant 019, **chaque article afficherait l’écran
 technique**. 018 et 019 seules ne changent rien pour la page publiée. Retour arrière dans l’ordre
-inverse : le lecteur d’abord.
+inverse : le lecteur d’abord pour 018 ; le retour arrière de 019 ne casse aucune page (v3 gardée, stricte).
 
 Chaque étape : check-list **avant** (si un point échoue, ne pas commencer) et **après** (si un point
 échoue, retour arrière de l’étape, § 6). Toutes les requêtes de contrôle PROD sont en lecture seule :
@@ -256,7 +256,9 @@ Après accord, même POST multipart que pour `create-gift-links`, vers
 entrypoint `index.ts`, fichier `gift-links/functions/subscription-offers/index.bundle.ts`.
 
 Après :
-- [ ] Sans en-tête → 401 ; avec un jeton existant sans le droit → 403 sur `GET`.
+- [ ] Sans en-tête → 401 ; avec un jeton existant sans le droit → 403 sur `GET`. **Écriture annoncée** :
+      tout appel avec un jeton valide (même refusé en 403) incrémente `api_clients.calls` et met à jour
+      `last_used_at` de ce jeton (`verify_api_client`). Sans écriture : le contrôle sans en-tête seul.
 - [ ] `create-gift-links` répond comme avant (un appel de contrôle sans jeton → 401).
 - [ ] Aucune offre de recette en PROD.
 
@@ -274,7 +276,7 @@ UPDATE public.api_clients SET manage_offers = true WHERE name = 'marketing-offre
 
 Après :
 - [ ] `SELECT name FROM public.api_clients WHERE manage_offers;` → `marketing-offres` seul.
-- [ ] `GET` (README, « Lister les offres ») → HTTP 200, `"offers": []`.
+- [ ] `GET` (README, « Lister les offres ») → HTTP 200, `"offers": []` (écriture attendue : incrémente `calls` et `last_used_at` du jeton marketing).
 
 ### 4. Migration 019 (PROD `ovifzentveeehhtlnugk`) — avant le lecteur
 
@@ -309,7 +311,10 @@ e-mail HubSpot se vérifie ensuite par
 `SELECT send_id, opened_at FROM public.gift_link_opens WHERE utm_source = '<at_medium des e-mails>' ORDER BY id DESC LIMIT 5;`.
 
 Retour arrière : appliquer `gift-links/supabase/rollback/019-identifiant-envoi-elargi.sql` par le
-même endpoint, **seulement après le retour arrière du lecteur** (étape 5) : le lecteur de !1 appelle v3.
+même endpoint, à tout moment. Il **garde v3** (un onglet déjà chargé sur la page de !1 l’appelle
+encore) mais la rend stricte, comme les autres : plus aucun identifiant élargi n’entre, aucune page ne
+casse. Supprimer v3 seulement plus tard, quand plus aucune page publiée ne l’appelle (commande en tête
+du fichier de retour arrière).
 
 ### 5. Lecteur (Lovable) — fusion de !1, puis Publish
 
@@ -342,7 +347,7 @@ Du plus doux au plus fort. Toujours commencer par le premier geste qui suffit.
 
 - **Lecteur** : restaurer la publication Lovable capturée avant intervention. Sans risque
   pour les données : l’ancienne page appelle `_v2`, qui reste stricte même avec 019 en place (un
-  `at_recipient_id` ne peut pas entrer). À faire **avant** tout retour arrière de 019 ou de 018.
+  `at_recipient_id` ne peut pas entrer). À faire **avant** le retour arrière SQL de 018.
 - **Couper une offre** sans rien retirer : `DELETE` de l’API (README), ou en SQL, que l’offre soit
   en cours ou à venir :
   `UPDATE public.subscription_offers SET ended_at = now() WHERE id = '<id>' AND ended_at IS NULL;`
@@ -382,11 +387,15 @@ Du plus doux au plus fort. Toujours commencer par le premier geste qui suffit.
     F=~/.config/lexpress/sauvegardes/offres-<date>.json
     node gift-links/supabase/sauvegarde/offres.mjs sql-restauration "$F" > /tmp/p934-restauration.sql
     node gift-links/supabase/sauvegarde/offres.mjs sql-retour-arriere "$F" > /tmp/p934-retour-arriere.sql
+
+    node gift-links/supabase/sauvegarde/offres.mjs sql-verification "$F" > /tmp/p934-verification.sql
     ```
 
-    Les deux commandes contrôlent chaque ligne (champs, types, dates) et refusent une sauvegarde
-    incomplète. Puis **essai à blanc** : passer `/tmp/p934-restauration.sql` sur la base encore intacte ;
-    il doit répondre sans erreur (il ne change rien et prouve empreinte, contenu et restaurabilité).
+    Les commandes contrôlent chaque ligne (champs, types, dates) et refusent une sauvegarde incomplète.
+    Puis passer **`/tmp/p934-verification.sql`** : il n’écrit rien (transaction annulée) et échoue si la
+    sauvegarde est altérée ou si offres et droits ont changé depuis. Ne **jamais** passer la
+    restauration sur la base intacte pour « essayer » : elle refuserait de toute façon d’y écrire, mais
+    c’est la vérification qui sert de contrôle.
 
   Puis appliquer **`/tmp/p934-retour-arriere.sql`** (et non le fichier brut
   `rollback/018-offres-abonnement.sql`) par le même endpoint. Il verrouille les tables des offres et des
@@ -399,7 +408,9 @@ Du plus doux au plus fort. Toujours commencer par le premier geste qui suffit.
   - [ ] `SELECT to_regclass('public.subscription_offers');` → NULL ; relevé des droits → aucune ligne.
 
   **Restauration** : ré-appliquer 018 (§ 1), puis `/tmp/p934-restauration.sql` par le même endpoint.
-  Le script vérifie, avant de valider, que les offres (dates à la microseconde) et les jetons qui ont
+  Elle n’écrit que dans une table vide où aucun jeton n’a le droit (l’état juste après ré-application) ;
+  sur une base peuplée, elle compare seulement et refuse le moindre écart, sans rien écrire. Le script
+  vérifie, avant de valider, que les offres (dates à la microseconde) et les jetons qui ont
   le droit sont exactement ceux de la sauvegarde ; sinon il annule tout. Il refuse une sauvegarde
   altérée et une base sans 018. Rejouable. Testé (`validate-offres-retour-arriere.mjs`, PGlite :
   sauvegarde, retour arrière gardé, ré-application, restauration, puis offres, droits, réponses de la
