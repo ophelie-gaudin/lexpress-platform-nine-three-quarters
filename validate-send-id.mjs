@@ -178,8 +178,16 @@ for (const [edition, token] of [['FR', FR], ['EUR', PL]]) {
 await lire('FR', FR, 'GARDE_123', 'v3');
 await db.exec(sql(ROLLBACK));
 {
-  check((await q(`SELECT to_regprocedure('${V3}') AS f`))[0].f === null, 'retour arrière : v3 supprimée');
-  check(JSON.stringify(await defs()) === JSON.stringify(avant.toutes), 'retour arrière : anciennes RPC exactement comme avant');
+  const apres = await defs();
+  check(JSON.stringify(apres.filter((f) => !f.f.includes('_v3'))) === JSON.stringify(avant.toutes), 'retour arrière : anciennes RPC exactement comme avant');
+  const v3 = apres.find((f) => f.f.includes('_v3'));
+  check(v3 && v3.a === avant.acl, 'retour arrière : v3 GARDÉE (un onglet déjà chargé l’appelle encore), mêmes droits');
+  check(v3.d.includes("p_send_id ~ '^[0-9a-f]{32}$'") && !v3.d.includes('{1,64}'), 'retour arrière : v3 redevenue stricte');
+  for (const [s, attendu] of [[HUBSPOT, null], ['987654321', null], [HEX, HEX]]) {
+    const r = await lire('FR', FR, s, 'v3');
+    check(r.status === 'ok' && r.body && (await derniere()).send_id === attendu, `retour arrière : v3 répond, ${s} → ${attendu}`);
+  }
+  check(JSON.stringify(await lire('EUR', PL, HEX, 'v3')) === JSON.stringify(await lire('EUR', PL, HEX, 'v2')), 'retour arrière : v3 répond toujours comme v2');
   check((await q("SELECT count(*)::int AS n FROM gift_link_opens WHERE send_id = 'GARDE_123'"))[0].n === 1,
     'retour arrière : les lectures déjà enregistrées sont gardées');
   check((await commentaire()).startsWith('Identifiant de l\'ENVOI (?s=…), 32 hexa'), 'retour arrière : commentaire de colonne de 005 restauré');
@@ -208,4 +216,4 @@ await db.exec(sql(MIGRATION)); // rejouable
 }
 
 await db.close();
-console.log(`Identifiant d'envoi (019) : ${n} contrôles — anciennes RPC strictes (aucun identifiant de contact par l'ancienne page), v3 accepte HubSpot, v3 = v2 ailleurs, valeurs bricolées à NULL, purge, retour arrière, rejeu et réparation vérifiés.`);
+console.log(`Identifiant d'envoi (019) : ${n} contrôles — anciennes RPC strictes (aucun identifiant de contact par l'ancienne page), v3 accepte HubSpot, v3 = v2 ailleurs, valeurs bricolées à NULL, purge, retour arrière (v3 gardée, stricte), rejeu et réparation vérifiés.`);
