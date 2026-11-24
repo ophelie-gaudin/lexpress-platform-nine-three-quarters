@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { PGlite } from '@electric-sql/pglite';
-import { sqlSauvegardeCodes, sqlVerificationCodes, sqlRestaurationCodes, lireSauvegardeCodes } from './gift-links/supabase/sauvegarde/codes-020.mjs';
+import { sqlSauvegardeCodes, sqlVerificationCodes, sqlRestaurationCodes, sqlRetourArriere020, lireSauvegardeCodes } from './gift-links/supabase/sauvegarde/codes-020.mjs';
 
 let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 const db = new PGlite();
@@ -171,7 +171,23 @@ check(article.length === 1 && (await q('SELECT count(*)::int AS n FROM public.gi
     check(refus !== null, `sauvegarde des codes refusée dès la lecture : ${quoi}`);
   }
 
-  await db.exec(R020);
+  // Revue GPT du 24/11, constat 1 : une offre créée (puis terminée) APRÈS la sauvegarde perdrait son code
+  // au retour arrière. Vérification et retour arrière gardé refusent, sans rien supprimer.
+  {
+    const tardive = (await q(`SELECT (public.create_subscription_offer($1, ARRAY['www.lexpress.fr'], now() + interval '1 day', NULL, NULL, 'Tardive', NULL, NULL, 'apres-sauvegarde')).id AS id`, [MARKETING]))[0].id;
+    await q('SELECT public.end_subscription_offer($1, $2)', [MARKETING, tardive]);
+    const eV = await erreur(sqlVerificationCodes(docCodes)); await db.exec('ROLLBACK');
+    check(eV && /différents de la sauvegarde/.test(eV), `offre créée après la sauvegarde : la vérification refuse (${eV})`);
+    const eG = await erreur(sqlRetourArriere020(docCodes)); await db.exec('ROLLBACK');
+    check(eG && /retour arrière de 020 refusé.*différents de la sauvegarde/.test(eG), `et le retour arrière gardé refuse (${eG})`);
+    check((await q("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name = 'subscription_offers' AND column_name = 'code'"))[0].n === 1,
+      'refus : la colonne code est toujours là');
+    await q('DELETE FROM public.subscription_offers WHERE id = $1', [tardive]);
+  }
+  check((sqlRetourArriere020(docCodes).match(/^BEGIN;$/gm) ?? []).length === 1 && (sqlRetourArriere020(docCodes).match(/^COMMIT;$/gm) ?? []).length === 1
+    && sqlRetourArriere020(docCodes).includes(R020.split('-- ── Définitions de 018, recopiées à l\'identique.')[1].replace(/\nCOMMIT;\n?$/, '')),
+    'retour arrière gardé : une seule transaction, définitions de 018 recopiées sans altération');
+  await db.exec(sqlRetourArriere020(docCodes));
   check(JSON.stringify(await empreintes(OFFRES)) === JSON.stringify(offres018),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : après retour arrière, les fonctions des offres sont exactement celles de 018 (empreintes et droits)');
   check(JSON.stringify(await empreintes(PROTEGEES)) === JSON.stringify(protegeesAvant), 'et les fonctions protégées n’ont jamais bougé');
@@ -194,7 +210,7 @@ check(article.length === 1 && (await q('SELECT count(*)::int AS n FROM public.gi
   check((await q("SELECT count(*)::int AS n FROM public.subscription_offers WHERE code ~ '^[0-9a-f]{16}$'"))[0].n === 3, '020 ré-appliquée : nouveaux codes engendrés');
   check(JSON.stringify(await empreintes(`${OFFRES}`)) === JSON.stringify(ap), '020 ré-appliquée : mêmes fonctions et droits que la première fois');
   const eVerif = await erreur(sqlVerificationCodes(docCodes)); await db.exec('ROLLBACK');
-  check(eVerif && /sans leur code sauvegardé/.test(eVerif), 'vérification après ré-application : signale les codes perdus');
+  check(eVerif && /différents de la sauvegarde/.test(eVerif), 'vérification après ré-application : signale les codes perdus');
   // Une offre créée depuis a pris le code sauvegardé : la restauration refuse, sans rien écrire.
   const intruse = (await q(`SELECT (public.create_subscription_offer($1, ARRAY['www.lexpress.fr'], now() + interval '1 day', NULL, NULL, 'Intruse', NULL, NULL, 'black-friday-2026')).id AS id`, [MARKETING]))[0].id;
   const codesIntrus = await q('SELECT id, code FROM public.subscription_offers ORDER BY id');
@@ -202,10 +218,16 @@ check(article.length === 1 && (await q('SELECT count(*)::int AS n FROM public.gi
   check(eConflit && /déjà pris par une offre créée depuis : black-friday-2026/.test(eConflit), `code repris entre-temps : restauration refusée (${eConflit})`);
   check(JSON.stringify(await q('SELECT id, code FROM public.subscription_offers ORDER BY id')) === JSON.stringify(codesIntrus), 'refus : aucun code changé');
   await q('DELETE FROM public.subscription_offers WHERE id = $1', [intruse]);
+  // Revue GPT, constat 2 : un code existant égal à l'ancien code provisoire (déterministe) ne bloque plus.
+  const ancienProvisoire = `tmp-${createHash('md5').update(docCodes.codes[0].id).digest('hex')}`;
+  const piege = (await q(`SELECT (public.create_subscription_offer($1, ARRAY['www.lexpress.fr'], now() + interval '1 day', NULL, NULL, 'Piège', NULL, NULL, $2)).id AS id`, [MARKETING, ancienProvisoire]))[0].id;
   const altere = { ...docCodes, codes: docCodes.codes.map((c, i) => (i === 0 ? { ...c, code: 'pirate-001' } : c)) };
   const eAltere = await erreur(sqlRestaurationCodes(altere)); await db.exec('ROLLBACK');
   check(eAltere && /altérée/.test(eAltere), 'sauvegarde des codes altérée : refusée');
   await db.exec(sqlRestaurationCodes(docCodes));
+  check((await q('SELECT code FROM public.subscription_offers WHERE id = $1', [piege]))[0].code === ancienProvisoire,
+    'une offre dont le code ressemble à un code provisoire ne bloque pas la restauration, et garde son code');
+  await q('DELETE FROM public.subscription_offers WHERE id = $1', [piege]);
   check(JSON.stringify(await q('SELECT id, code FROM public.subscription_offers ORDER BY id')) === JSON.stringify(codesAvant),
     'C’EST LA PROPRIÉTÉ QUI COMPTE : après retour arrière et ré-application, chaque offre retrouve son code — un lien envoyé ne désigne jamais une autre offre');
   await db.exec(sqlRestaurationCodes(docCodes));
