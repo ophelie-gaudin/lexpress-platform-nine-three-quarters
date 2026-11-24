@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node build-gift-links-function.mjs",
-    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs && node validate-interface.mjs && node validate-europe-hosts.mjs && node validate-europe-schema.mjs && node validate-reader-patch.mjs && node validate-article-language.mjs && node validate-subscription-offers.mjs && node validate-reader-offers.mjs",
+    "test": "node validate-gift-links-schema.mjs && node validate-gift-links-api.mjs && node validate-interface.mjs && node validate-europe-hosts.mjs && node validate-europe-schema.mjs && node validate-reader-patch.mjs && node validate-article-language.mjs && node validate-subscription-offers.mjs && node validate-reader-offers.mjs && node validate-send-id.mjs",
     "interface": "node interface/serveur-local.mjs"
   },
   "devDependencies": {

@@ -18,7 +18,7 @@ let n = 0; const check = (c, l) => { assert.ok(c, l); n++; };
 const db = new PGlite();
 await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
 const migrations = readdirSync('gift-links/supabase').filter((f) => /^\d.*\.sql$/.test(f) && !f.startsWith('004')).sort();
-check(migrations.at(-1) === '018-offres-abonnement.sql', '018 est la dernière migration');
+check(migrations.includes('018-offres-abonnement.sql'), '018 est présente (019 suit : validate-send-id.mjs)');
 for (const f of migrations) await db.exec(readFileSync(`gift-links/supabase/${f}`, 'utf8'));
 const q = async (sql, args) => JSON.parse(JSON.stringify((await db.query(sql, args)).rows));
 const rejette = async (sql, args, motif, libelle) => {
