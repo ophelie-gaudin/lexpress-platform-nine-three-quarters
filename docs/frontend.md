@@ -4,7 +4,7 @@ La page publiée se trouve sur `https://articles.lexpress.fr/a/:token`. Ses sour
 
 ## Lecture
 
-Appeler uniquement `get_gift_article` avec la clé publique du projet Supabase et les paramètres `p_token`, `p_utm_source`, `p_utm_campaign`, `p_referrer`, `p_send_id`, `p_campaign_group`. Tous sauf `p_token` peuvent être nuls. `p_send_id` reçoit le `?s=` de l'URL : il rattache une lecture à un envoi précis, là où le token est commun à tous les destinataires. Une valeur hors forme devient `NULL` sans faire tomber la page — une query string bricolée ne doit jamais rendre un article illisible. La réponse SQL contient une ligne ; les échecs de transport ou du service restent possibles et doivent être traités séparément.
+Appeler uniquement `get_gift_article` avec la clé publique du projet Supabase et les paramètres `p_token`, `p_utm_source`, `p_utm_campaign`, `p_referrer`, `p_send_id`, `p_campaign_group`. Tous sauf `p_token` peuvent être nuls. `p_send_id` reçoit le `?s=` de l'URL : il rattache une lecture à un envoi précis, là où le token est commun à tous les destinataires. Une valeur hors forme devient `NULL` sans faire tomber la page — une query string bricolée ne doit jamais rendre un article illisible. La page envoie `at_recipient_id` s'il est présent, sinon `s` : un lien ne doit donc pas porter `at_recipient_id`, qui prendrait la place de `s`. La réponse SQL contient une ligne ; les échecs de transport ou du service restent possibles et doivent être traités séparément.
 
 Le frontend ne doit jamais recevoir de jeton de service, `ARC_TOKEN` ou une clé `service_role`, ni appeler l’API de création. Il ne connaît que la clé publique `anon` et `get_gift_article`.
 
@@ -53,11 +53,19 @@ for (const [cle, valeur] of new URLSearchParams(location.search))
 
 | Paramètre | Rôle | Journalisé en base |
 | --- | --- | --- |
-| `s` | identifiant d'ENVOI, 32 hexadécimaux. Le token est commun à l'article ; `s` désigne l'envoi | oui, `gift_link_opens.send_id` |
+| `s` | identifiant d'ENVOI : 1 à 64 caractères parmi `A-Z a-z 0-9 _ -` (depuis 019 ; 32 hexadécimaux avant). Le token est commun à l'article ; `s` désigne l'envoi | oui, `gift_link_opens.send_id` |
 | `at_medium` | le canal — `Whatsapp`, `Newsletter`… | oui, `utm_source` |
 | `at_campaign` | la campagne | oui, `utm_campaign` |
 | `at_campaign_group` | le segment du prospect | oui, `campaign_group` |
 | `at_*` à venir | toute dimension AT Internet future | **non** — transmise au site, pas stockée |
+
+**Ce que vaut `s`, pour un appelant comme les e-mails (24 novembre 2026, migration 019).** Une valeur par
+envoi ou par e-mail, de 1 à 64 caractères parmi `A-Z`, `a-z`, `0-9`, `_` et `-`. L'agent WhatsApp tire
+32 hexadécimaux au hasard par envoi ; les e-mails HubSpot mettent l'identifiant de l'e-mail, par exemple
+`?s=123456789012`. **Jamais** d'adresse e-mail, de numéro de téléphone ni d'identifiant de contact : `s`
+est recopié sur le bouton d'abonnement et part vers lexpress.fr et Piano, et il est conservé 90 jours.
+Toute autre valeur (espace, `@`, `<`, accent, plus de 64 caractères) est enregistrée `NULL` ; l'article
+s'affiche quand même et le bouton recopie `s` tel quel. La page n'a rien à changer pour ce format.
 
 Avec une offre, la même règle s'applique à l'URL de l'offre : ses propres paramètres restent, ceux du visiteur s'y ajoutent et l'emportent en cas de doublon.
 

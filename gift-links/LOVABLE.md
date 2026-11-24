@@ -141,7 +141,7 @@ suivi ne demande donc aucune modification de la page — il suffit de la poser s
 
 | Paramètre | Rôle | Qui le pose |
 | --- | --- | --- |
-| `s` | identifiant d'ENVOI, 32 hexadécimaux. Le token est commun à l'article ; `s` désigne l'envoi, et rend la lecture attribuable | l'appelant qui diffuse |
+| `s` | identifiant d'ENVOI, 1 à 64 caractères `A-Za-z0-9_-` (32 hexadécimaux pour WhatsApp, identifiant de l'e-mail pour HubSpot ; 019). Le token est commun à l'article ; `s` désigne l'envoi, et rend la lecture attribuable | l'appelant qui diffuse |
 | `at_medium` | le canal — `Whatsapp`, `Newsletter`, `Whatsapp_test`… | l'appelant qui diffuse |
 | `at_campaign` | la campagne | l'appelant qui diffuse |
 | `at_campaign_group` | le segment du prospect — `prospects_chauds`, `prospects_abandon`, `prospects_paid` | l'appelant qui diffuse |

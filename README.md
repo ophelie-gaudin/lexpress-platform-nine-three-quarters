@@ -270,6 +270,7 @@ déjà un lien valable jusqu'au 7 novembre, quelqu'un l'a peut-être reçu avec 
 - Redemander un article conserve son token et prolonge sa durée si nécessaire. Une prolongation profite aussi aux anciens destinataires. Une demande plus courte ne raccourcit jamais la durée.
 - Un lien expiré peut être rouvert par une nouvelle demande ; un lien retiré manuellement reste retiré.
 - **L’attribution se met dans l’URL du lien diffusé, pas dans la requête de création.** Un lien est commun à tous ses destinataires ; lui coller une campagne attribuerait toutes ses lectures à la dernière déclarée. Diffuser `…/a/<token>?s=<identifiant d’envoi>&at_medium=…&at_campaign=…&at_campaign_group=…` : chaque lecture est enregistrée avec SON contexte, et un même lien diffusé dans trois campagnes donne trois séries distinctes.
+- **`s`, l’identifiant d’envoi : une valeur par envoi ou par e-mail.** 1 à 64 caractères parmi `A-Z`, `a-z`, `0-9`, `_` et `-`. L’agent WhatsApp tire 32 hexadécimaux au hasard ; un e-mail HubSpot met l’identifiant de l’e-mail (`?s=123456789012`). **Jamais d’adresse e-mail, de numéro de téléphone ni d’identifiant de contact** : `s` est recopié sur le bouton d’abonnement, part vers lexpress.fr et Piano, et reste 90 jours en base. Une autre valeur est enregistrée vide, sans erreur : l’article s’affiche quand même. Ne pas poser `at_recipient_id` sur le lien : la page le prendrait à la place de `s`.
 - La page sert une copie. Les corrections ou dépublications du CMS ne s’y répercutent pas automatiquement. Un nouvel appel peut rafraîchir le cache ; un retrait urgent demande une action explicite.
 - Les tables sont fermées aux rôles publics. La lecture passe uniquement par `get_gift_article` ; la création requiert les droits serveur.
 - `fake_body: true` est réservé aux essais et produit un texte clairement marqué démonstration quand aucun vrai corps n’est disponible.
@@ -723,7 +724,7 @@ pas faire, étant commun au lien.
 
 **La ligne `gift_links` n'est jamais élaguée.** La supprimer casserait une promesse écrite : un lien expiré se rouvre par une nouvelle demande, avec le même token. Sans la ligne, un token neuf est créé et le lien que quelqu'un garde dans un vieux message meurt pour de bon. Une ligne `withdrawn_at` moins que toute autre : l'effacer rendrait l'article offrable de nouveau, en silence.
 
-**`send_id` désigne un envoi, donc une personne.** Il sert à la relance J+2 — quelques jours. Il part à 90 jours sans toucher au reste : le segment et la date restent, et les comptes par campagne ne bougent pas.
+**`send_id` désigne un envoi, donc une personne.** Il sert à la relance J+2 — quelques jours. Pour un e-mail HubSpot, il désigne l’e-mail (tous ses destinataires) : il ne doit jamais identifier un contact. Il part à 90 jours sans toucher au reste : le segment et la date restent, et les comptes par campagne ne bougent pas.
 
 `pg_cron` exécute la purge tous les jours à **4 h 15 UTC**, après la collecte nocturne pour ne pas croiser une création de liens.
 
@@ -778,6 +779,7 @@ Utiliser un projet Supabase dédié. Appliquer **les douze fichiers de `gift-lin
 | `011-ne-jamais-degrader.sql` | un repli n'écrase plus un corps déjà diffusé ; la date de fin ne peut que croître |
 | `012-retention.sql` | la purge : ce qu'on garde, et combien de temps |
 | `018-offres-abonnement.sql` | les offres d’abonnement du moment, gérées par l’API `subscription-offers` |
+| `019-identifiant-envoi-elargi.sql` | `?s=` accepte 1 à 64 caractères `A-Za-z0-9_-` (identifiant d’e-mail HubSpot), plus seulement 32 hexadécimaux |
 
 Sauter `006` laisse la fonction sans moyen de reconnaître un appelant : elle refusera tout avec un `401`. Sauter `007` ou `008` la fait échouer à la première création, le corps de `create_gift_links` référençant des colonnes absentes.
 
