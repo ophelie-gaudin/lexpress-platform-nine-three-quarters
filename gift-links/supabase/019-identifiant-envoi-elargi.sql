@@ -27,8 +27,11 @@
 -- droits restent en place ; ceux-ci sont tout de même réaffirmés plus bas, pour que le fichier se suffise.
 -- Rejouable. Retour arrière : rollback/019-identifiant-envoi-elargi.sql.
 --
--- ORDRE DE DÉPLOIEMENT : indifférent vis-à-vis de la page, qui transmet déjà `s` tel quel et le recopie
--- sur le bouton d'abonnement. Appliquer avant le premier e-mail HubSpot qui porte `s`.
+-- ORDRE DE DÉPLOIEMENT (revue adverse du 24/11, constat 1) : APRÈS la publication de la page qui ne prend
+-- l'identifiant d'envoi que dans `s`. La page publiée avant elle préfère `at_recipient_id` à `s` ; avec ce
+-- motif élargi, `?s=123456789012&at_recipient_id=987654321` enregistrerait l'identifiant du CONTACT, alors
+-- qu'avec 015 il devenait NULL. La base ne peut pas savoir de quel paramètre vient la valeur : la règle
+-- est dans la page (`sendIdFrom`). Appliquer ensuite avant le premier e-mail HubSpot qui porte `s`.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 
