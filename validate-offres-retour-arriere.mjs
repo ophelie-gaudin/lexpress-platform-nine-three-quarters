@@ -19,7 +19,8 @@ const db = new PGlite();
 await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
 // Une session qui n'est pas en UTC : la sauvegarde ne doit pas en dépendre.
 await db.exec("SET TimeZone = 'Europe/Paris'");
-for (const f of readdirSync('gift-links/supabase').filter((f) => /^\d.*\.sql$/.test(f) && !f.startsWith('004')).sort()) {
+// Schéma de 018 (et 019) : ce retour arrière s'emploie après celui de 020 (validate-offre-par-parametre.mjs).
+for (const f of readdirSync('gift-links/supabase').filter((f) => /^\d.*\.sql$/.test(f) && !f.startsWith('004') && f < '020').sort()) {
   await db.exec(readFileSync(`gift-links/supabase/${f}`, 'utf8'));
 }
 const q = async (sql, args) => JSON.parse(JSON.stringify((await db.query(sql, args)).rows));
