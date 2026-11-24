@@ -68,9 +68,12 @@ const avant = { def: await definition(), acl: await droits() };
 await db.exec(sql(MIGRATION));
 {
   const apres = await definition();
-  const diff = apres.split('\n').filter((l) => !avant.def.split('\n').includes(l)).filter((l) => !/^\s*--/.test(l));
-  check(diff.length === 1 && diff[0].includes("'^[A-Za-z0-9_-]{1,64}$'"),
-    `019 ne change que la ligne d'assainissement de send_id — lignes nouvelles : ${JSON.stringify(diff)}`);
+  // Définition attendue : celle de 015, ligne d'assainissement remplacée ; commentaires ignorés.
+  const sansCommentaires = (d) => d.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n');
+  const ancienne = "p_send_id ~ '^[0-9a-f]{32}$'", nouvelle = "p_send_id ~ '^[A-Za-z0-9_-]{1,64}$'";
+  check(avant.def.split(ancienne).length === 2, '015 contient une seule fois l’ancien assainissement');
+  check(sansCommentaires(apres) === sansCommentaires(avant.def.replace(ancienne, () => nouvelle)),
+    '019 = définition de 015 à la seule ligne d’assainissement près (aucune ligne ajoutée, retirée ni modifiée ailleurs)');
   check(await droits() === avant.acl, `droits identiques à 015 — ${await droits()}`);
   check((await q("SELECT count(*)::int AS n FROM pg_proc WHERE proname = 'get_gift_article_for_edition'"))[0].n === 1,
     'une seule fonction de ce nom : pas de seconde signature');
@@ -107,8 +110,9 @@ for (const [rpc, edition, token] of [['v2', 'FR', FR], ['v2', 'EUR', PL], ['lega
 
 // Les comptes par campagne comptent les e-mails comme des envois.
 {
-  const v = await q("SELECT sum(sends)::int AS s FROM gift_link_reads_by_campaign WHERE utm_campaign = 'bf'");
-  check(v[0].s >= 5, `la vue compte les envois distincts, e-mails compris — ${v[0].s}`);
+  const v = await q("SELECT edition, sends FROM gift_link_reads_by_campaign WHERE utm_campaign = 'bf' AND utm_source = 'Newsletter' ORDER BY edition");
+  check(JSON.stringify(v) === JSON.stringify([{ edition: 'EUR', sends: ACCEPTES.length }, { edition: 'FR', sends: ACCEPTES.length }]),
+    `la vue compte chaque envoi accepté, e-mail HubSpot compris, par édition — ${JSON.stringify(v)}`);
 }
 
 // La purge à 90 jours efface aussi les nouveaux identifiants.
