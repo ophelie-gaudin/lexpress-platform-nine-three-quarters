@@ -1,13 +1,16 @@
--- Retour arrière de 019 : `s` redevient « 32 hexadécimaux ou NULL », la définition exacte de 015.
--- Aucune page à toucher avant ni après : la page transmet `s` tel quel dans les deux cas. Un e-mail HubSpot
--- qui porte un identifiant numérique continue d'afficher l'article ; seule sa lecture n'est plus attribuée
--- (send_id NULL).
+-- Retour arrière de 019 : supprime `get_gift_article_for_edition_v3` et remet le commentaire de colonne de
+-- 005. ORDRE : la page de !1 appelle v3 ; la retirer d'abord (publication précédente), sinon chaque lecture
+-- afficherait l'écran technique. Les anciennes fonctions restent strictes (32 hexadécimaux).
+-- Remet AUSSI la définition exacte de 015 de `get_gift_article_for_edition` : sans effet si elle l'est
+-- déjà, elle répare une base où l'ancienne version de 019 (motif élargi dans cette fonction) avait été
+-- appliquée (TEST, 24/11).
 -- Les identifiants déjà enregistrés au nouveau format sont GARDÉS : ce sont des lectures réelles, et la
 -- purge nocturne les efface à 90 jours comme les autres (012). Les effacer tout de suite, si besoin :
 --   UPDATE public.gift_link_opens SET send_id = NULL WHERE send_id !~ '^[0-9a-f]{32}$';
 -- Liens, articles, lectures et jetons ne sont pas touchés. Rejouer 019 ensuite est possible (testé).
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DROP FUNCTION IF EXISTS public.get_gift_article_for_edition_v3(text,text,text,text,text,text,text);
 
 CREATE OR REPLACE FUNCTION public.get_gift_article_for_edition(p_edition text, p_token text, p_utm_source text DEFAULT NULL::text, p_utm_campaign text DEFAULT NULL::text, p_referrer text DEFAULT NULL::text, p_send_id text DEFAULT NULL::text, p_campaign_group text DEFAULT NULL::text)
  RETURNS TABLE(status text, canonical_url text, title text, standfirst text, image_url text, body text, section text, author text, published_at timestamp with time zone)
